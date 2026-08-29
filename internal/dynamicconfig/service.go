@@ -70,6 +70,7 @@ func (s *Service) PutDraft(ctx context.Context, value Entry, expectedVersion int
 		return Entry{}, apperror.Invalid("expected_version is required for an existing entry", nil)
 	}
 	current.Value, current.SecretRef, current.Status, current.RolloutPercentage, current.Revision, current.UpdatedAt, current.UpdatedBy = value.Value, value.SecretRef, "draft", value.RolloutPercentage, current.Revision+1, now, caller.Subject
+	current.ReviewComment, current.ReviewedBy, current.ReviewedAt = "", "", nil
 	err = s.transactor.Within(ctx, nil, func(tx *sqlx.Tx) error { return s.repository.Update(ctx, tx, current, expectedVersion) })
 	if err != nil {
 		return Entry{}, translate(err)
@@ -78,13 +79,67 @@ func (s *Service) PutDraft(ctx context.Context, value Entry, expectedVersion int
 	return current, nil
 }
 func (s *Service) Publish(ctx context.Context, id string, expected int64) (Entry, error) {
-	return s.changeStatus(ctx, id, expected, "published")
-}
-func (s *Service) changeStatus(ctx context.Context, id string, expected int64, statusValue string) (Entry, error) {
 	current, err := s.repository.Get(ctx, id)
 	if err != nil {
 		return Entry{}, translate(err)
 	}
+	if current.Status != "approved" {
+		return Entry{}, apperror.Conflict("only an approved configuration can be published", nil)
+	}
+	current.PublishedRevision = current.Revision
+	return s.changeStatus(ctx, current, expected, "published", false)
+}
+func (s *Service) SubmitForApproval(ctx context.Context, id string, expected int64) (Entry, error) {
+	current, err := s.repository.Get(ctx, id)
+	if err != nil {
+		return Entry{}, translate(err)
+	}
+	if current.Status != "draft" && current.Status != "rejected" {
+		return Entry{}, apperror.Conflict("only a draft or rejected configuration can be submitted", nil)
+	}
+	current.ReviewComment, current.ReviewedBy, current.ReviewedAt = "", "", nil
+	return s.changeStatus(ctx, current, expected, "pending_approval", true)
+}
+func (s *Service) Approve(ctx context.Context, id string, expected int64, comment string) (Entry, error) {
+	return s.review(ctx, id, expected, "approved", comment)
+}
+func (s *Service) Reject(ctx context.Context, id string, expected int64, reason string) (Entry, error) {
+	if strings.TrimSpace(reason) == "" {
+		return Entry{}, apperror.Invalid("rejection reason is required", nil)
+	}
+	return s.review(ctx, id, expected, "rejected", reason)
+}
+func (s *Service) review(ctx context.Context, id string, expected int64, statusValue, comment string) (Entry, error) {
+	current, err := s.repository.Get(ctx, id)
+	if err != nil {
+		return Entry{}, translate(err)
+	}
+	if current.Status != "pending_approval" {
+		return Entry{}, apperror.Conflict("configuration is not pending approval", nil)
+	}
+	caller, ok := principal.FromContext(ctx)
+	if !ok {
+		return Entry{}, apperror.Unauthorized("authenticated actor is required")
+	}
+	if caller.Subject == current.UpdatedBy {
+		return Entry{}, apperror.Conflict("submitter cannot review their own configuration", nil)
+	}
+	now := s.now()
+	current.Status, current.ReviewComment, current.ReviewedBy, current.ReviewedAt = statusValue, strings.TrimSpace(comment), caller.Subject, &now
+	current.UpdatedAt, current.UpdatedBy = now, caller.Subject
+	err = s.transactor.Within(ctx, nil, func(tx *sqlx.Tx) error {
+		if err := s.repository.UpdateRevisionReview(ctx, tx, current, "pending_approval"); err != nil {
+			return err
+		}
+		if err := s.repository.Update(ctx, tx, current, expected); err != nil {
+			return err
+		}
+		current.Version = expected + 1
+		return s.addChangedEvent(ctx, tx, current, statusValue, caller.Subject)
+	})
+	return current, translate(err)
+}
+func (s *Service) changeStatus(ctx context.Context, current Entry, expected int64, statusValue string, snapshot bool) (Entry, error) {
 	caller, ok := principal.FromContext(ctx)
 	if !ok {
 		return Entry{}, apperror.Unauthorized("authenticated actor is required")
@@ -92,13 +147,15 @@ func (s *Service) changeStatus(ctx context.Context, id string, expected int64, s
 	current.Status = statusValue
 	current.UpdatedAt = s.now()
 	current.UpdatedBy = caller.Subject
-	err = s.transactor.Within(ctx, nil, func(tx *sqlx.Tx) error {
+	err := s.transactor.Within(ctx, nil, func(tx *sqlx.Tx) error {
 		if err := s.repository.Update(ctx, tx, current, expected); err != nil {
 			return err
 		}
 		current.Version = expected + 1
-		if err := s.repository.Snapshot(ctx, tx, current); err != nil {
-			return err
+		if snapshot {
+			if err := s.repository.Snapshot(ctx, tx, current); err != nil {
+				return err
+			}
 		}
 		return s.addChangedEvent(ctx, tx, current, statusValue, caller.Subject)
 	})
@@ -113,7 +170,11 @@ func (s *Service) Rollback(ctx context.Context, id string, target, expected int6
 	if err != nil {
 		return Entry{}, translate(err)
 	}
+	if revision.Status != "approved" && revision.Status != "published" {
+		return Entry{}, apperror.Conflict("rollback target was not approved", nil)
+	}
 	current.Value, current.SecretRef, current.RolloutPercentage, current.Status, current.Revision = revision.Value, revision.SecretRef, revision.RolloutPercentage, "published", current.Revision+1
+	current.PublishedRevision = current.Revision
 	caller, ok := principal.FromContext(ctx)
 	if !ok {
 		return Entry{}, apperror.Unauthorized("authenticated actor is required")
@@ -134,7 +195,10 @@ func (s *Service) Rollback(ctx context.Context, id string, target, expected int6
 }
 
 func (s *Service) addChangedEvent(ctx context.Context, tx *sqlx.Tx, entry Entry, changeType, actor string) error {
-	payload := &configv1.ConfigChangedEvent{Entry: &configv1.ConfigEntry{Id: entry.ID, Environment: entry.Environment, TenantId: entry.TenantID, Service: entry.Service, Key: entry.Key, SecretRef: entry.SecretRef, Status: entry.Status, Revision: entry.Revision, RolloutPercentage: entry.RolloutPercentage, Version: entry.Version, CreatedAt: timestamppb.New(entry.CreatedAt), UpdatedAt: timestamppb.New(entry.UpdatedAt), CreatedBy: entry.CreatedBy, UpdatedBy: entry.UpdatedBy}, ChangeType: changeType}
+	payload := &configv1.ConfigChangedEvent{Entry: &configv1.ConfigEntry{Id: entry.ID, Environment: entry.Environment, TenantId: entry.TenantID, Service: entry.Service, Key: entry.Key, SecretRef: entry.SecretRef, Status: entry.Status, Revision: entry.Revision, RolloutPercentage: entry.RolloutPercentage, PublishedRevision: entry.PublishedRevision, ReviewComment: entry.ReviewComment, ReviewedBy: entry.ReviewedBy, Version: entry.Version, CreatedAt: timestamppb.New(entry.CreatedAt), UpdatedAt: timestamppb.New(entry.UpdatedAt), CreatedBy: entry.CreatedBy, UpdatedBy: entry.UpdatedBy}, ChangeType: changeType}
+	if entry.ReviewedAt != nil {
+		payload.Entry.ReviewedAt = timestamppb.New(*entry.ReviewedAt)
+	}
 	if entry.SecretRef == "" {
 		payload.Entry.Value = append([]byte(nil), entry.Value...)
 	}

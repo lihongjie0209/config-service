@@ -25,6 +25,14 @@ definitions:
         type: string
       key:
         type: string
+      published_revision:
+        type: integer
+      review_comment:
+        type: string
+      reviewed_at:
+        type: string
+      reviewed_by:
+        type: string
       revision:
         type: integer
       rollout_percentage:
@@ -162,6 +170,18 @@ definitions:
       request_id:
         type: string
     type: object
+  httptransport.ReviewConfigRequest:
+    properties:
+      comment:
+        type: string
+      expected_version:
+        type: integer
+      id:
+        type: string
+    required:
+    - expected_version
+    - id
+    type: object
   httptransport.RollbackConfigRequest:
     properties:
       expected_version:
@@ -183,6 +203,30 @@ info:
   title: Go API Template
   version: "1.0"
 paths:
+  /api/v1/config/entries/approve:
+    post:
+      parameters:
+      - description: Approval decision
+        in: body
+        name: request
+        required: true
+        schema:
+          $ref: '#/definitions/httptransport.ReviewConfigRequest'
+      responses:
+        "200":
+          description: OK
+          schema:
+            allOf:
+            - $ref: '#/definitions/httptransport.Response'
+            - properties:
+                body:
+                  $ref: '#/definitions/dynamicconfig.Entry'
+              type: object
+      security:
+      - Bearer: []
+      summary: Approve a submitted configuration revision
+      tags:
+      - configuration
   /api/v1/config/entries/list:
     post:
       parameters:
@@ -255,6 +299,30 @@ paths:
       summary: Create or update a configuration draft
       tags:
       - configuration
+  /api/v1/config/entries/reject:
+    post:
+      parameters:
+      - description: Rejection decision; comment is required
+        in: body
+        name: request
+        required: true
+        schema:
+          $ref: '#/definitions/httptransport.ReviewConfigRequest'
+      responses:
+        "200":
+          description: OK
+          schema:
+            allOf:
+            - $ref: '#/definitions/httptransport.Response'
+            - properties:
+                body:
+                  $ref: '#/definitions/dynamicconfig.Entry'
+              type: object
+      security:
+      - Bearer: []
+      summary: Reject a submitted configuration revision
+      tags:
+      - configuration
   /api/v1/config/entries/rollback:
     post:
       parameters:
@@ -277,6 +345,30 @@ paths:
       security:
       - Bearer: []
       summary: Roll back a published configuration
+      tags:
+      - configuration
+  /api/v1/config/entries/submit:
+    post:
+      parameters:
+      - description: Configuration version
+        in: body
+        name: request
+        required: true
+        schema:
+          $ref: '#/definitions/httptransport.ConfigIDRequest'
+      responses:
+        "200":
+          description: OK
+          schema:
+            allOf:
+            - $ref: '#/definitions/httptransport.Response'
+            - properties:
+                body:
+                  $ref: '#/definitions/dynamicconfig.Entry'
+              type: object
+      security:
+      - Bearer: []
+      summary: Submit a configuration revision for independent approval
       tags:
       - configuration
   /api/v1/config/resolve:

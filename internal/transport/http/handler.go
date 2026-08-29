@@ -37,6 +37,11 @@ type ConfigIDRequest struct {
 	ID              string `json:"id" binding:"required"`
 	ExpectedVersion int64  `json:"expected_version" binding:"required"`
 }
+type ReviewConfigRequest struct {
+	ID              string `json:"id" binding:"required"`
+	ExpectedVersion int64  `json:"expected_version" binding:"required"`
+	Comment         string `json:"comment"`
+}
 type RollbackConfigRequest struct {
 	ID              string `json:"id" binding:"required"`
 	TargetRevision  int64  `json:"target_revision" binding:"required"`
@@ -152,6 +157,67 @@ func (h *Handler) PublishConfig(c *gin.Context) {
 		return
 	}
 	value, err := h.configs.Publish(c.Request.Context(), request.ID, request.ExpectedVersion)
+	if err != nil {
+		Fail(c, h.logger, err)
+		return
+	}
+	OK(c, value)
+}
+
+// SubmitConfig godoc
+// @Summary Submit a configuration revision for independent approval
+// @Tags configuration
+// @Security Bearer
+// @Param request body ConfigIDRequest true "Configuration version"
+// @Success 200 {object} Response{body=dynamicconfig.Entry}
+// @Router /api/v1/config/entries/submit [post]
+func (h *Handler) SubmitConfig(c *gin.Context) {
+	var request ConfigIDRequest
+	if err := c.ShouldBindJSON(&request); err != nil {
+		Fail(c, h.logger, apperror.Invalid("invalid json request", err))
+		return
+	}
+	value, err := h.configs.SubmitForApproval(c.Request.Context(), request.ID, request.ExpectedVersion)
+	if err != nil {
+		Fail(c, h.logger, err)
+		return
+	}
+	OK(c, value)
+}
+
+// ApproveConfig godoc
+// @Summary Approve a submitted configuration revision
+// @Tags configuration
+// @Security Bearer
+// @Param request body ReviewConfigRequest true "Approval decision"
+// @Success 200 {object} Response{body=dynamicconfig.Entry}
+// @Router /api/v1/config/entries/approve [post]
+func (h *Handler) ApproveConfig(c *gin.Context) { h.reviewConfig(c, true) }
+
+// RejectConfig godoc
+// @Summary Reject a submitted configuration revision
+// @Tags configuration
+// @Security Bearer
+// @Param request body ReviewConfigRequest true "Rejection decision; comment is required"
+// @Success 200 {object} Response{body=dynamicconfig.Entry}
+// @Router /api/v1/config/entries/reject [post]
+func (h *Handler) RejectConfig(c *gin.Context) { h.reviewConfig(c, false) }
+
+func (h *Handler) reviewConfig(c *gin.Context, approve bool) {
+	var request ReviewConfigRequest
+	if err := c.ShouldBindJSON(&request); err != nil {
+		Fail(c, h.logger, apperror.Invalid("invalid json request", err))
+		return
+	}
+	var (
+		value configdomain.Entry
+		err   error
+	)
+	if approve {
+		value, err = h.configs.Approve(c.Request.Context(), request.ID, request.ExpectedVersion, request.Comment)
+	} else {
+		value, err = h.configs.Reject(c.Request.Context(), request.ID, request.ExpectedVersion, request.Comment)
+	}
 	if err != nil {
 		Fail(c, h.logger, err)
 		return

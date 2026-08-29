@@ -15,6 +15,50 @@ const docTemplate = `{
     "host": "{{.Host}}",
     "basePath": "{{.BasePath}}",
     "paths": {
+        "/api/v1/config/entries/approve": {
+            "post": {
+                "security": [
+                    {
+                        "Bearer": []
+                    }
+                ],
+                "tags": [
+                    "configuration"
+                ],
+                "summary": "Approve a submitted configuration revision",
+                "parameters": [
+                    {
+                        "description": "Approval decision",
+                        "name": "request",
+                        "in": "body",
+                        "required": true,
+                        "schema": {
+                            "$ref": "#/definitions/httptransport.ReviewConfigRequest"
+                        }
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "allOf": [
+                                {
+                                    "$ref": "#/definitions/httptransport.Response"
+                                },
+                                {
+                                    "type": "object",
+                                    "properties": {
+                                        "body": {
+                                            "$ref": "#/definitions/dynamicconfig.Entry"
+                                        }
+                                    }
+                                }
+                            ]
+                        }
+                    }
+                }
+            }
+        },
         "/api/v1/config/entries/list": {
             "post": {
                 "security": [
@@ -147,6 +191,50 @@ const docTemplate = `{
                 }
             }
         },
+        "/api/v1/config/entries/reject": {
+            "post": {
+                "security": [
+                    {
+                        "Bearer": []
+                    }
+                ],
+                "tags": [
+                    "configuration"
+                ],
+                "summary": "Reject a submitted configuration revision",
+                "parameters": [
+                    {
+                        "description": "Rejection decision; comment is required",
+                        "name": "request",
+                        "in": "body",
+                        "required": true,
+                        "schema": {
+                            "$ref": "#/definitions/httptransport.ReviewConfigRequest"
+                        }
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "allOf": [
+                                {
+                                    "$ref": "#/definitions/httptransport.Response"
+                                },
+                                {
+                                    "type": "object",
+                                    "properties": {
+                                        "body": {
+                                            "$ref": "#/definitions/dynamicconfig.Entry"
+                                        }
+                                    }
+                                }
+                            ]
+                        }
+                    }
+                }
+            }
+        },
         "/api/v1/config/entries/rollback": {
             "post": {
                 "security": [
@@ -166,6 +254,50 @@ const docTemplate = `{
                         "required": true,
                         "schema": {
                             "$ref": "#/definitions/httptransport.RollbackConfigRequest"
+                        }
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "allOf": [
+                                {
+                                    "$ref": "#/definitions/httptransport.Response"
+                                },
+                                {
+                                    "type": "object",
+                                    "properties": {
+                                        "body": {
+                                            "$ref": "#/definitions/dynamicconfig.Entry"
+                                        }
+                                    }
+                                }
+                            ]
+                        }
+                    }
+                }
+            }
+        },
+        "/api/v1/config/entries/submit": {
+            "post": {
+                "security": [
+                    {
+                        "Bearer": []
+                    }
+                ],
+                "tags": [
+                    "configuration"
+                ],
+                "summary": "Submit a configuration revision for independent approval",
+                "parameters": [
+                    {
+                        "description": "Configuration version",
+                        "name": "request",
+                        "in": "body",
+                        "required": true,
+                        "schema": {
+                            "$ref": "#/definitions/httptransport.ConfigIDRequest"
                         }
                     }
                 ],
@@ -416,6 +548,18 @@ const docTemplate = `{
                 "key": {
                     "type": "string"
                 },
+                "published_revision": {
+                    "type": "integer"
+                },
+                "review_comment": {
+                    "type": "string"
+                },
+                "reviewed_at": {
+                    "type": "string"
+                },
+                "reviewed_by": {
+                    "type": "string"
+                },
                 "revision": {
                     "type": "integer"
                 },
@@ -619,6 +763,24 @@ const docTemplate = `{
                     "type": "string"
                 },
                 "request_id": {
+                    "type": "string"
+                }
+            }
+        },
+        "httptransport.ReviewConfigRequest": {
+            "type": "object",
+            "required": [
+                "expected_version",
+                "id"
+            ],
+            "properties": {
+                "comment": {
+                    "type": "string"
+                },
+                "expected_version": {
+                    "type": "integer"
+                },
+                "id": {
                     "type": "string"
                 }
             }

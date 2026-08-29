@@ -63,7 +63,16 @@ func TestRepositoryAndMigrations(t *testing.T) {
 			if err != nil {
 				t.Fatalf("put draft: %v", err)
 			}
-			published, err := service.Publish(actorCtx, created.ID, created.Version)
+			submitted, err := service.SubmitForApproval(actorCtx, created.ID, created.Version)
+			if err != nil {
+				t.Fatalf("submit: %v", err)
+			}
+			reviewerCtx := principal.WithContext(ctx, principal.Principal{Subject: "reviewer-1", Method: principal.AuthenticationJWT})
+			approved, err := service.Approve(reviewerCtx, created.ID, submitted.Version, "integration review")
+			if err != nil {
+				t.Fatalf("approve: %v", err)
+			}
+			published, err := service.Publish(actorCtx, created.ID, approved.Version)
 			if err != nil {
 				t.Fatalf("publish: %v", err)
 			}
@@ -72,7 +81,7 @@ func TestRepositoryAndMigrations(t *testing.T) {
 				t.Fatalf("resolve=%+v etag=%q published=%+v err=%v", resolved, etag, published, err)
 			}
 			var outboxEvents int
-			if err := db.GetContext(ctx, &outboxEvents, `SELECT count(*) FROM config_outbox_events WHERE subject='platform.config.entry.changed.v1' AND published_at IS NULL`); err != nil || outboxEvents != 1 {
+			if err := db.GetContext(ctx, &outboxEvents, `SELECT count(*) FROM config_outbox_events WHERE subject='platform.config.entry.changed.v1' AND published_at IS NULL`); err != nil || outboxEvents != 3 {
 				t.Fatalf("pending config outbox events=%d err=%v", outboxEvents, err)
 			}
 			var userTables int

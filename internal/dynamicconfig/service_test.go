@@ -46,6 +46,13 @@ func (f *fakeRepository) Update(_ context.Context, _ sqlx.ExtContext, v Entry, e
 	return nil
 }
 func (*fakeRepository) Snapshot(context.Context, sqlx.ExtContext, Entry) error { return nil }
+func (f *fakeRepository) UpdateRevisionReview(_ context.Context, _ sqlx.ExtContext, value Entry, expectedStatus string) error {
+	if f.entry.Status != expectedStatus {
+		return ErrStaleVersion
+	}
+	f.entry = value
+	return nil
+}
 func (f *fakeRepository) GetRevision(context.Context, string, int64) (Entry, error) {
 	return f.entry, nil
 }
@@ -90,7 +97,7 @@ func TestPutDraftRequiresSecretReferenceForSensitiveKey(t *testing.T) {
 	}
 }
 
-func TestPublishCreatesTransactionalChangeEvent(t *testing.T) {
+func TestPublishApprovedRevisionCreatesTransactionalChangeEvent(t *testing.T) {
 	db, mock, err := sqlmock.New()
 	if err != nil {
 		t.Fatal(err)
@@ -99,7 +106,7 @@ func TestPublishCreatesTransactionalChangeEvent(t *testing.T) {
 	mock.ExpectBegin()
 	mock.ExpectCommit()
 	now := time.Date(2026, 8, 30, 8, 0, 0, 0, time.FixedZone("UTC+8", 8*3600))
-	repository := &fakeRepository{entry: Entry{ID: "config-1", Environment: "production", Service: "orders", Key: "feature.checkout", Value: []byte("true"), Status: "draft", Revision: 1, RolloutPercentage: 100, Version: 1, CreatedAt: now, UpdatedAt: now, CreatedBy: "admin-1", UpdatedBy: "admin-1"}}
+	repository := &fakeRepository{entry: Entry{ID: "config-1", Environment: "production", Service: "orders", Key: "feature.checkout", Value: []byte("true"), Status: "approved", Revision: 1, RolloutPercentage: 100, Version: 1, CreatedAt: now, UpdatedAt: now, CreatedBy: "admin-1", UpdatedBy: "reviewer-1"}}
 	service := NewService(repository, database.NewTransactor(sqlx.NewDb(db, "sqlmock")))
 	service.now = func() time.Time { return now }
 	ctx := principal.WithContext(t.Context(), principal.Principal{Subject: "admin-1"})
@@ -108,6 +115,61 @@ func TestPublishCreatesTransactionalChangeEvent(t *testing.T) {
 	}
 	if len(repository.outbox) != 1 || repository.outbox[0].Subject != "platform.config.entry.changed.v1" || len(repository.outbox[0].Envelope) == 0 {
 		t.Fatalf("outbox=%+v", repository.outbox)
+	}
+	if repository.entry.PublishedRevision != 1 || repository.entry.Status != "published" {
+		t.Fatalf("published=%+v", repository.entry)
+	}
+}
+
+func TestPublishRejectsUnapprovedRevision(t *testing.T) {
+	repository := &fakeRepository{entry: Entry{ID: "config-1", Status: "draft", Version: 1}}
+	service := NewService(repository, &database.Transactor{})
+	ctx := principal.WithContext(t.Context(), principal.Principal{Subject: "admin-1"})
+	if _, err := service.Publish(ctx, "config-1", 1); err == nil {
+		t.Fatal("Publish() accepted a draft revision")
+	}
+}
+
+func TestApprovalRequiresIndependentReviewer(t *testing.T) {
+	now := time.Date(2026, 8, 30, 8, 0, 0, 0, time.FixedZone("UTC+8", 8*3600))
+	repository := &fakeRepository{entry: Entry{ID: "config-1", Status: "pending_approval", Revision: 1, Version: 2, UpdatedBy: "author-1", CreatedAt: now, UpdatedAt: now}}
+	service := NewService(repository, &database.Transactor{})
+	ctx := principal.WithContext(t.Context(), principal.Principal{Subject: "author-1"})
+	if _, err := service.Approve(ctx, "config-1", 2, "looks good"); err == nil {
+		t.Fatal("Approve() allowed the submitter to approve their own revision")
+	}
+}
+
+func TestIndependentReviewerCanApprove(t *testing.T) {
+	db, mock, err := sqlmock.New()
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { _ = db.Close() })
+	mock.ExpectBegin()
+	mock.ExpectCommit()
+	now := time.Date(2026, 8, 30, 8, 0, 0, 0, time.FixedZone("UTC+8", 8*3600))
+	repository := &fakeRepository{entry: Entry{ID: "config-1", Status: "pending_approval", Revision: 1, Version: 2, UpdatedBy: "author-1", CreatedAt: now, UpdatedAt: now}}
+	service := NewService(repository, database.NewTransactor(sqlx.NewDb(db, "sqlmock")))
+	service.now = func() time.Time { return now }
+	ctx := principal.WithContext(t.Context(), principal.Principal{Subject: "reviewer-1"})
+	approved, err := service.Approve(ctx, "config-1", 2, "reviewed")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if approved.Status != "approved" || approved.ReviewedBy != "reviewer-1" || approved.Version != 3 || approved.ReviewedAt == nil {
+		t.Fatalf("approved=%+v", approved)
+	}
+	if err := mock.ExpectationsWereMet(); err != nil {
+		t.Fatal(err)
+	}
+}
+
+func TestRejectRequiresReason(t *testing.T) {
+	service := NewService(&fakeRepository{entry: Entry{ID: "config-1", Status: "pending_approval"}}, &database.Transactor{})
+	ctx := principal.WithContext(t.Context(), principal.Principal{Subject: "reviewer-1"})
+	if _, err := service.Reject(ctx, "config-1", 1, "  "); err == nil {
+		t.Fatal("Reject() accepted an empty reason")
 	}
 }
 
