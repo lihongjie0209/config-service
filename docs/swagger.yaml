@@ -1,0 +1,398 @@
+basePath: /
+definitions:
+  buildinfo.Info:
+    properties:
+      build_time:
+        type: string
+      commit:
+        type: string
+      started_at:
+        type: string
+      uptime:
+        type: string
+      version:
+        type: string
+    type: object
+  dynamicconfig.Entry:
+    properties:
+      created_at:
+        type: string
+      created_by:
+        type: string
+      environment:
+        type: string
+      id:
+        type: string
+      key:
+        type: string
+      revision:
+        type: integer
+      rollout_percentage:
+        type: integer
+      secret_ref:
+        type: string
+      service:
+        type: string
+      status:
+        type: string
+      tenant_id:
+        type: string
+      updated_at:
+        type: string
+      updated_by:
+        type: string
+      value:
+        items:
+          type: integer
+        type: array
+      version:
+        type: integer
+    type: object
+  dynamicconfig.Page:
+    properties:
+      entries:
+        items:
+          $ref: '#/definitions/dynamicconfig.Entry'
+        type: array
+      page:
+        type: integer
+      page_size:
+        type: integer
+      total:
+        type: integer
+    type: object
+  health.Dependency:
+    properties:
+      latency:
+        type: string
+      status:
+        type: string
+    type: object
+  health.Status:
+    properties:
+      dependencies:
+        additionalProperties:
+          $ref: '#/definitions/health.Dependency'
+        type: object
+      status:
+        type: string
+    type: object
+  httptransport.ConfigIDRequest:
+    properties:
+      expected_version:
+        type: integer
+      id:
+        type: string
+    required:
+    - expected_version
+    - id
+    type: object
+  httptransport.ListConfigRequest:
+    properties:
+      environment:
+        type: string
+      page:
+        type: integer
+      page_size:
+        type: integer
+      service:
+        type: string
+      tenant_id:
+        type: string
+    required:
+    - environment
+    - service
+    type: object
+  httptransport.MeResponseBody:
+    properties:
+      subject:
+        type: string
+    type: object
+  httptransport.PutConfigRequest:
+    properties:
+      environment:
+        type: string
+      expected_version:
+        type: integer
+      id:
+        type: string
+      key:
+        type: string
+      rollout_percentage:
+        type: integer
+      secret_ref:
+        type: string
+      service:
+        type: string
+      tenant_id:
+        type: string
+      value:
+        type: object
+    required:
+    - environment
+    - key
+    - service
+    type: object
+  httptransport.ResolveConfigRequest:
+    properties:
+      environment:
+        type: string
+      keys:
+        items:
+          type: string
+        type: array
+      service:
+        type: string
+      subject_id:
+        type: string
+      tenant_id:
+        type: string
+    required:
+    - environment
+    - keys
+    - service
+    type: object
+  httptransport.Response:
+    properties:
+      body: {}
+      code:
+        type: integer
+      message:
+        type: string
+      request_id:
+        type: string
+    type: object
+  httptransport.RollbackConfigRequest:
+    properties:
+      expected_version:
+        type: integer
+      id:
+        type: string
+      target_revision:
+        type: integer
+    required:
+    - expected_version
+    - id
+    - target_revision
+    type: object
+info:
+  contact: {}
+  description: 'Production-oriented Go Web API scaffold. Application error codes:
+    0 success; 10000-19999 common/input; 20000-29999 authentication/authorization;
+    30000-39999 business; 50000-59999 infrastructure.'
+  title: Go API Template
+  version: "1.0"
+paths:
+  /api/v1/config/entries/list:
+    post:
+      parameters:
+      - description: Configuration scope
+        in: body
+        name: request
+        required: true
+        schema:
+          $ref: '#/definitions/httptransport.ListConfigRequest'
+      responses:
+        "200":
+          description: OK
+          schema:
+            allOf:
+            - $ref: '#/definitions/httptransport.Response'
+            - properties:
+                body:
+                  $ref: '#/definitions/dynamicconfig.Page'
+              type: object
+      security:
+      - Bearer: []
+      summary: List configuration entries
+      tags:
+      - configuration
+  /api/v1/config/entries/publish:
+    post:
+      parameters:
+      - description: Configuration version
+        in: body
+        name: request
+        required: true
+        schema:
+          $ref: '#/definitions/httptransport.ConfigIDRequest'
+      responses:
+        "200":
+          description: OK
+          schema:
+            allOf:
+            - $ref: '#/definitions/httptransport.Response'
+            - properties:
+                body:
+                  $ref: '#/definitions/dynamicconfig.Entry'
+              type: object
+      security:
+      - Bearer: []
+      summary: Publish a configuration revision
+      tags:
+      - configuration
+  /api/v1/config/entries/put-draft:
+    post:
+      parameters:
+      - description: Configuration draft
+        in: body
+        name: request
+        required: true
+        schema:
+          $ref: '#/definitions/httptransport.PutConfigRequest'
+      responses:
+        "200":
+          description: OK
+          schema:
+            allOf:
+            - $ref: '#/definitions/httptransport.Response'
+            - properties:
+                body:
+                  $ref: '#/definitions/dynamicconfig.Entry'
+              type: object
+      security:
+      - Bearer: []
+      summary: Create or update a configuration draft
+      tags:
+      - configuration
+  /api/v1/config/entries/rollback:
+    post:
+      parameters:
+      - description: Rollback target
+        in: body
+        name: request
+        required: true
+        schema:
+          $ref: '#/definitions/httptransport.RollbackConfigRequest'
+      responses:
+        "200":
+          description: OK
+          schema:
+            allOf:
+            - $ref: '#/definitions/httptransport.Response'
+            - properties:
+                body:
+                  $ref: '#/definitions/dynamicconfig.Entry'
+              type: object
+      security:
+      - Bearer: []
+      summary: Roll back a published configuration
+      tags:
+      - configuration
+  /api/v1/config/resolve:
+    post:
+      parameters:
+      - description: Resolution scope
+        in: body
+        name: request
+        required: true
+        schema:
+          $ref: '#/definitions/httptransport.ResolveConfigRequest'
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/httptransport.Response'
+      security:
+      - Bearer: []
+      summary: Resolve effective configuration for a subject
+      tags:
+      - configuration
+  /api/v1/me:
+    post:
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            allOf:
+            - $ref: '#/definitions/httptransport.Response'
+            - properties:
+                body:
+                  $ref: '#/definitions/httptransport.MeResponseBody'
+              type: object
+        "401":
+          description: 'Code 20001: unauthorized'
+          schema:
+            $ref: '#/definitions/httptransport.Response'
+      security:
+      - Bearer: []
+      summary: Return the authenticated subject
+      tags:
+      - authentication
+  /api/v1/version:
+    post:
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            allOf:
+            - $ref: '#/definitions/httptransport.Response'
+            - properties:
+                body:
+                  $ref: '#/definitions/buildinfo.Info'
+              type: object
+      summary: Return build and runtime version information
+      tags:
+      - operations
+  /live:
+    post:
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            allOf:
+            - $ref: '#/definitions/httptransport.Response'
+            - properties:
+                body:
+                  $ref: '#/definitions/health.Status'
+              type: object
+      summary: Check process liveness
+      tags:
+      - operations
+  /ready:
+    post:
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            allOf:
+            - $ref: '#/definitions/httptransport.Response'
+            - properties:
+                body:
+                  $ref: '#/definitions/health.Status'
+              type: object
+        "503":
+          description: 'Code 50003: dependency unavailable'
+          schema:
+            allOf:
+            - $ref: '#/definitions/httptransport.Response'
+            - properties:
+                body:
+                  $ref: '#/definitions/health.Status'
+              type: object
+      summary: Check database and Redis readiness
+      tags:
+      - operations
+schemes:
+- http
+- https
+securityDefinitions:
+  Bearer:
+    description: Enter "Bearer {JWT}".
+    in: header
+    name: Authorization
+    type: apiKey
+  PSK:
+    description: Enter "PSK {shared-key}" for routes configured with PSK authentication.
+    in: header
+    name: Authorization
+    type: apiKey
+swagger: "2.0"
