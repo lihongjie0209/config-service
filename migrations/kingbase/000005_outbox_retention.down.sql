@@ -1,0 +1,1 @@
+DROP INDEX config_outbox_retention_idx;
