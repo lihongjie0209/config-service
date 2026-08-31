@@ -3,6 +3,7 @@ package httptransport
 import (
 	"encoding/json"
 	"log/slog"
+	"time"
 
 	"github.com/gin-gonic/gin"
 	"github.com/lihongjie0209/config-service/internal/apperror"
@@ -60,6 +61,40 @@ type ListConfigRequest struct {
 	Service     string `json:"service" binding:"required"`
 	Page        int    `json:"page"`
 	PageSize    int    `json:"page_size"`
+}
+
+type ConfigEntryResponseBody struct {
+	ID                string     `json:"id"`
+	Environment       string     `json:"environment"`
+	TenantID          string     `json:"tenant_id"`
+	Service           string     `json:"service"`
+	Key               string     `json:"key"`
+	Value             any        `json:"value,omitempty"`
+	SecretRef         string     `json:"secret_ref"`
+	Status            string     `json:"status"`
+	Revision          int64      `json:"revision"`
+	RolloutPercentage int32      `json:"rollout_percentage"`
+	PublishedRevision int64      `json:"published_revision"`
+	ReviewComment     string     `json:"review_comment"`
+	ReviewedBy        string     `json:"reviewed_by"`
+	ReviewedAt        *time.Time `json:"reviewed_at,omitempty"`
+	Version           int64      `json:"version"`
+	CreatedAt         time.Time  `json:"created_at"`
+	UpdatedAt         time.Time  `json:"updated_at"`
+	CreatedBy         string     `json:"created_by"`
+	UpdatedBy         string     `json:"updated_by"`
+}
+
+type ConfigPageResponseBody struct {
+	Entries  []ConfigEntryResponseBody `json:"entries"`
+	Total    int64                     `json:"total"`
+	Page     int                       `json:"page"`
+	PageSize int                       `json:"page_size"`
+}
+
+type ResolveConfigResponseBody struct {
+	Entries []ConfigEntryResponseBody `json:"entries"`
+	ETag    string                    `json:"etag"`
 }
 
 type MeResponseBody struct {
@@ -127,7 +162,7 @@ func (h *Handler) Version(c *gin.Context) { OK(c, buildinfo.Current()) }
 // @Tags configuration
 // @Security Bearer
 // @Param request body PutConfigRequest true "Configuration draft"
-// @Success 200 {object} Response{body=dynamicconfig.Entry}
+// @Success 200 {object} Response{body=ConfigEntryResponseBody}
 // @Router /api/v1/config/entries/put-draft [post]
 func (h *Handler) PutConfig(c *gin.Context) {
 	var request PutConfigRequest
@@ -140,7 +175,7 @@ func (h *Handler) PutConfig(c *gin.Context) {
 		Fail(c, h.logger, err)
 		return
 	}
-	OK(c, value)
+	OK(c, configEntryResponse(value))
 }
 
 // PublishConfig godoc
@@ -148,7 +183,7 @@ func (h *Handler) PutConfig(c *gin.Context) {
 // @Tags configuration
 // @Security Bearer
 // @Param request body ConfigIDRequest true "Configuration version"
-// @Success 200 {object} Response{body=dynamicconfig.Entry}
+// @Success 200 {object} Response{body=ConfigEntryResponseBody}
 // @Router /api/v1/config/entries/publish [post]
 func (h *Handler) PublishConfig(c *gin.Context) {
 	var request ConfigIDRequest
@@ -161,7 +196,7 @@ func (h *Handler) PublishConfig(c *gin.Context) {
 		Fail(c, h.logger, err)
 		return
 	}
-	OK(c, value)
+	OK(c, configEntryResponse(value))
 }
 
 // SubmitConfig godoc
@@ -169,7 +204,7 @@ func (h *Handler) PublishConfig(c *gin.Context) {
 // @Tags configuration
 // @Security Bearer
 // @Param request body ConfigIDRequest true "Configuration version"
-// @Success 200 {object} Response{body=dynamicconfig.Entry}
+// @Success 200 {object} Response{body=ConfigEntryResponseBody}
 // @Router /api/v1/config/entries/submit [post]
 func (h *Handler) SubmitConfig(c *gin.Context) {
 	var request ConfigIDRequest
@@ -182,7 +217,7 @@ func (h *Handler) SubmitConfig(c *gin.Context) {
 		Fail(c, h.logger, err)
 		return
 	}
-	OK(c, value)
+	OK(c, configEntryResponse(value))
 }
 
 // ApproveConfig godoc
@@ -190,7 +225,7 @@ func (h *Handler) SubmitConfig(c *gin.Context) {
 // @Tags configuration
 // @Security Bearer
 // @Param request body ReviewConfigRequest true "Approval decision"
-// @Success 200 {object} Response{body=dynamicconfig.Entry}
+// @Success 200 {object} Response{body=ConfigEntryResponseBody}
 // @Router /api/v1/config/entries/approve [post]
 func (h *Handler) ApproveConfig(c *gin.Context) { h.reviewConfig(c, true) }
 
@@ -199,7 +234,7 @@ func (h *Handler) ApproveConfig(c *gin.Context) { h.reviewConfig(c, true) }
 // @Tags configuration
 // @Security Bearer
 // @Param request body ReviewConfigRequest true "Rejection decision; comment is required"
-// @Success 200 {object} Response{body=dynamicconfig.Entry}
+// @Success 200 {object} Response{body=ConfigEntryResponseBody}
 // @Router /api/v1/config/entries/reject [post]
 func (h *Handler) RejectConfig(c *gin.Context) { h.reviewConfig(c, false) }
 
@@ -222,7 +257,7 @@ func (h *Handler) reviewConfig(c *gin.Context, approve bool) {
 		Fail(c, h.logger, err)
 		return
 	}
-	OK(c, value)
+	OK(c, configEntryResponse(value))
 }
 
 // RollbackConfig godoc
@@ -230,7 +265,7 @@ func (h *Handler) reviewConfig(c *gin.Context, approve bool) {
 // @Tags configuration
 // @Security Bearer
 // @Param request body RollbackConfigRequest true "Rollback target"
-// @Success 200 {object} Response{body=dynamicconfig.Entry}
+// @Success 200 {object} Response{body=ConfigEntryResponseBody}
 // @Router /api/v1/config/entries/rollback [post]
 func (h *Handler) RollbackConfig(c *gin.Context) {
 	var request RollbackConfigRequest
@@ -243,7 +278,7 @@ func (h *Handler) RollbackConfig(c *gin.Context) {
 		Fail(c, h.logger, err)
 		return
 	}
-	OK(c, value)
+	OK(c, configEntryResponse(value))
 }
 
 // ResolveConfig godoc
@@ -251,7 +286,7 @@ func (h *Handler) RollbackConfig(c *gin.Context) {
 // @Tags configuration
 // @Security Bearer
 // @Param request body ResolveConfigRequest true "Resolution scope"
-// @Success 200 {object} Response
+// @Success 200 {object} Response{body=ResolveConfigResponseBody}
 // @Router /api/v1/config/resolve [post]
 func (h *Handler) ResolveConfig(c *gin.Context) {
 	var request ResolveConfigRequest
@@ -264,7 +299,7 @@ func (h *Handler) ResolveConfig(c *gin.Context) {
 		Fail(c, h.logger, err)
 		return
 	}
-	OK(c, gin.H{"entries": values, "etag": etag})
+	OK(c, ResolveConfigResponseBody{Entries: configEntryResponses(values), ETag: etag})
 }
 
 // ListConfig godoc
@@ -272,7 +307,7 @@ func (h *Handler) ResolveConfig(c *gin.Context) {
 // @Tags configuration
 // @Security Bearer
 // @Param request body ListConfigRequest true "Configuration scope"
-// @Success 200 {object} Response{body=dynamicconfig.Page}
+// @Success 200 {object} Response{body=ConfigPageResponseBody}
 // @Router /api/v1/config/entries/list [post]
 func (h *Handler) ListConfig(c *gin.Context) {
 	var request ListConfigRequest
@@ -285,7 +320,30 @@ func (h *Handler) ListConfig(c *gin.Context) {
 		Fail(c, h.logger, err)
 		return
 	}
-	OK(c, value)
+	OK(c, ConfigPageResponseBody{Entries: configEntryResponses(value.Entries), Total: value.Total, Page: value.Page, PageSize: value.PageSize})
+}
+
+func configEntryResponses(entries []configdomain.Entry) []ConfigEntryResponseBody {
+	result := make([]ConfigEntryResponseBody, 0, len(entries))
+	for _, entry := range entries {
+		result = append(result, configEntryResponse(entry))
+	}
+	return result
+}
+
+func configEntryResponse(entry configdomain.Entry) ConfigEntryResponseBody {
+	var value any
+	if len(entry.Value) > 0 {
+		_ = json.Unmarshal(entry.Value, &value)
+	}
+	return ConfigEntryResponseBody{
+		ID: entry.ID, Environment: entry.Environment, TenantID: entry.TenantID, Service: entry.Service, Key: entry.Key,
+		Value: value, SecretRef: entry.SecretRef, Status: entry.Status, Revision: entry.Revision,
+		RolloutPercentage: entry.RolloutPercentage, PublishedRevision: entry.PublishedRevision,
+		ReviewComment: entry.ReviewComment, ReviewedBy: entry.ReviewedBy, ReviewedAt: entry.ReviewedAt,
+		Version: entry.Version, CreatedAt: entry.CreatedAt, UpdatedAt: entry.UpdatedAt,
+		CreatedBy: entry.CreatedBy, UpdatedBy: entry.UpdatedBy,
+	}
 }
 
 // CreateUser godoc

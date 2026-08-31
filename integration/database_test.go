@@ -14,7 +14,7 @@ import (
 	appdb "github.com/lihongjie0209/config-service/internal/database"
 	configdomain "github.com/lihongjie0209/config-service/internal/dynamicconfig"
 	"github.com/lihongjie0209/config-service/internal/migration"
-	"github.com/lihongjie0209/config-service/internal/principal"
+	platformprincipal "github.com/lihongjie0209/microservice-platform-go/principal"
 	"github.com/testcontainers/testcontainers-go"
 	"github.com/testcontainers/testcontainers-go/modules/mysql"
 	"github.com/testcontainers/testcontainers-go/modules/postgres"
@@ -58,7 +58,7 @@ func TestRepositoryAndMigrations(t *testing.T) {
 			}
 			t.Cleanup(func() { _ = db.Close() })
 			service := configdomain.NewService(configdomain.NewRepository(db), appdb.NewTransactor(db))
-			actorCtx := principal.WithContext(ctx, principal.Principal{Subject: "admin-1", Method: principal.AuthenticationJWT})
+			actorCtx := platformprincipal.WithContext(ctx, platformprincipal.Principal{ID: "admin-1", Type: platformprincipal.TypeUser, TenantID: "tenant-1"})
 			created, err := service.PutDraft(actorCtx, configdomain.Entry{Environment: "test", TenantID: "tenant-1", Service: "web", Key: "feature.checkout", Value: []byte(`true`), RolloutPercentage: 100}, 0)
 			if err != nil {
 				t.Fatalf("put draft: %v", err)
@@ -67,7 +67,7 @@ func TestRepositoryAndMigrations(t *testing.T) {
 			if err != nil {
 				t.Fatalf("submit: %v", err)
 			}
-			reviewerCtx := principal.WithContext(ctx, principal.Principal{Subject: "reviewer-1", Method: principal.AuthenticationJWT})
+			reviewerCtx := platformprincipal.WithContext(ctx, platformprincipal.Principal{ID: "reviewer-1", Type: platformprincipal.TypeUser, TenantID: "tenant-1"})
 			approved, err := service.Approve(reviewerCtx, created.ID, submitted.Version, "integration review")
 			if err != nil {
 				t.Fatalf("approve: %v", err)

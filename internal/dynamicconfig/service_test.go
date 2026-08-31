@@ -2,18 +2,25 @@ package dynamicconfig
 
 import (
 	"context"
+	"errors"
 	"testing"
 	"time"
 
 	"github.com/DATA-DOG/go-sqlmock"
 	"github.com/jmoiron/sqlx"
+	"github.com/lihongjie0209/config-service/internal/apperror"
 	"github.com/lihongjie0209/config-service/internal/database"
-	"github.com/lihongjie0209/config-service/internal/principal"
+	platformprincipal "github.com/lihongjie0209/microservice-platform-go/principal"
 )
 
 type fakeRepository struct {
 	entry  Entry
 	outbox []OutboxEvent
+}
+
+func userContext(t *testing.T, id, tenantID string) context.Context {
+	t.Helper()
+	return platformprincipal.WithContext(t.Context(), platformprincipal.Principal{ID: id, Type: platformprincipal.TypeUser, TenantID: tenantID})
 }
 
 func (f *fakeRepository) AddOutbox(_ context.Context, _ sqlx.ExtContext, event OutboxEvent) error {
@@ -75,7 +82,7 @@ func TestPutDraftCreatesAuditedEntry(t *testing.T) {
 	service := NewService(repo, database.NewTransactor(sqlx.NewDb(db, "sqlmock")))
 	now := time.Date(2026, 8, 30, 8, 0, 0, 0, time.FixedZone("UTC+8", 8*3600))
 	service.now = func() time.Time { return now }
-	ctx := principal.WithContext(t.Context(), principal.Principal{Subject: "admin-1", Method: principal.AuthenticationJWT})
+	ctx := userContext(t, "admin-1", "tenant-1")
 	created, err := service.PutDraft(ctx, Entry{Environment: " Production ", TenantID: "tenant-1", Service: "Web", Key: "feature.checkout", Value: []byte(`true`), RolloutPercentage: 25}, 0)
 	if err != nil {
 		t.Fatal(err)
@@ -90,8 +97,8 @@ func TestPutDraftCreatesAuditedEntry(t *testing.T) {
 
 func TestPutDraftRequiresSecretReferenceForSensitiveKey(t *testing.T) {
 	service := NewService(&fakeRepository{}, &database.Transactor{})
-	ctx := principal.WithContext(t.Context(), principal.Principal{Subject: "admin-1"})
-	_, err := service.PutDraft(ctx, Entry{Environment: "production", Service: "web", Key: "database.password", Value: []byte(`"plain"`), RolloutPercentage: 100}, 0)
+	ctx := userContext(t, "admin-1", "tenant-1")
+	_, err := service.PutDraft(ctx, Entry{Environment: "production", TenantID: "tenant-1", Service: "web", Key: "database.password", Value: []byte(`"plain"`), RolloutPercentage: 100}, 0)
 	if err == nil {
 		t.Fatal("PutDraft() accepted plaintext secret")
 	}
@@ -106,10 +113,10 @@ func TestPublishApprovedRevisionCreatesTransactionalChangeEvent(t *testing.T) {
 	mock.ExpectBegin()
 	mock.ExpectCommit()
 	now := time.Date(2026, 8, 30, 8, 0, 0, 0, time.FixedZone("UTC+8", 8*3600))
-	repository := &fakeRepository{entry: Entry{ID: "config-1", Environment: "production", Service: "orders", Key: "feature.checkout", Value: []byte("true"), Status: "approved", Revision: 1, RolloutPercentage: 100, Version: 1, CreatedAt: now, UpdatedAt: now, CreatedBy: "admin-1", UpdatedBy: "reviewer-1"}}
+	repository := &fakeRepository{entry: Entry{ID: "config-1", Environment: "production", TenantID: "tenant-1", Service: "orders", Key: "feature.checkout", Value: []byte("true"), Status: "approved", Revision: 1, RolloutPercentage: 100, Version: 1, CreatedAt: now, UpdatedAt: now, CreatedBy: "admin-1", UpdatedBy: "reviewer-1"}}
 	service := NewService(repository, database.NewTransactor(sqlx.NewDb(db, "sqlmock")))
 	service.now = func() time.Time { return now }
-	ctx := principal.WithContext(t.Context(), principal.Principal{Subject: "admin-1"})
+	ctx := userContext(t, "admin-1", "tenant-1")
 	if _, err := service.Publish(ctx, "config-1", 1); err != nil {
 		t.Fatal(err)
 	}
@@ -124,7 +131,7 @@ func TestPublishApprovedRevisionCreatesTransactionalChangeEvent(t *testing.T) {
 func TestPublishRejectsUnapprovedRevision(t *testing.T) {
 	repository := &fakeRepository{entry: Entry{ID: "config-1", Status: "draft", Version: 1}}
 	service := NewService(repository, &database.Transactor{})
-	ctx := principal.WithContext(t.Context(), principal.Principal{Subject: "admin-1"})
+	ctx := userContext(t, "admin-1", "tenant-1")
 	if _, err := service.Publish(ctx, "config-1", 1); err == nil {
 		t.Fatal("Publish() accepted a draft revision")
 	}
@@ -132,9 +139,9 @@ func TestPublishRejectsUnapprovedRevision(t *testing.T) {
 
 func TestApprovalRequiresIndependentReviewer(t *testing.T) {
 	now := time.Date(2026, 8, 30, 8, 0, 0, 0, time.FixedZone("UTC+8", 8*3600))
-	repository := &fakeRepository{entry: Entry{ID: "config-1", Status: "pending_approval", Revision: 1, Version: 2, UpdatedBy: "author-1", CreatedAt: now, UpdatedAt: now}}
+	repository := &fakeRepository{entry: Entry{ID: "config-1", TenantID: "tenant-1", Status: "pending_approval", Revision: 1, Version: 2, UpdatedBy: "author-1", CreatedAt: now, UpdatedAt: now}}
 	service := NewService(repository, &database.Transactor{})
-	ctx := principal.WithContext(t.Context(), principal.Principal{Subject: "author-1"})
+	ctx := userContext(t, "author-1", "tenant-1")
 	if _, err := service.Approve(ctx, "config-1", 2, "looks good"); err == nil {
 		t.Fatal("Approve() allowed the submitter to approve their own revision")
 	}
@@ -149,10 +156,10 @@ func TestIndependentReviewerCanApprove(t *testing.T) {
 	mock.ExpectBegin()
 	mock.ExpectCommit()
 	now := time.Date(2026, 8, 30, 8, 0, 0, 0, time.FixedZone("UTC+8", 8*3600))
-	repository := &fakeRepository{entry: Entry{ID: "config-1", Status: "pending_approval", Revision: 1, Version: 2, UpdatedBy: "author-1", CreatedAt: now, UpdatedAt: now}}
+	repository := &fakeRepository{entry: Entry{ID: "config-1", TenantID: "tenant-1", Status: "pending_approval", Revision: 1, Version: 2, UpdatedBy: "author-1", CreatedAt: now, UpdatedAt: now}}
 	service := NewService(repository, database.NewTransactor(sqlx.NewDb(db, "sqlmock")))
 	service.now = func() time.Time { return now }
-	ctx := principal.WithContext(t.Context(), principal.Principal{Subject: "reviewer-1"})
+	ctx := userContext(t, "reviewer-1", "tenant-1")
 	approved, err := service.Approve(ctx, "config-1", 2, "reviewed")
 	if err != nil {
 		t.Fatal(err)
@@ -167,9 +174,18 @@ func TestIndependentReviewerCanApprove(t *testing.T) {
 
 func TestRejectRequiresReason(t *testing.T) {
 	service := NewService(&fakeRepository{entry: Entry{ID: "config-1", Status: "pending_approval"}}, &database.Transactor{})
-	ctx := principal.WithContext(t.Context(), principal.Principal{Subject: "reviewer-1"})
+	ctx := userContext(t, "reviewer-1", "tenant-1")
 	if _, err := service.Reject(ctx, "config-1", 1, "  "); err == nil {
 		t.Fatal("Reject() accepted an empty reason")
+	}
+}
+
+func TestListRejectsTenantOutsideJWTContext(t *testing.T) {
+	service := NewService(&fakeRepository{}, &database.Transactor{})
+	_, err := service.List(userContext(t, "admin-1", "tenant-1"), "production", "tenant-2", "orders", 1, 20)
+	var appErr *apperror.Error
+	if !errors.As(err, &appErr) || appErr.Code != apperror.CodeForbidden {
+		t.Fatalf("List() error = %v, want forbidden", err)
 	}
 }
 

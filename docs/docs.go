@@ -49,7 +49,7 @@ const docTemplate = `{
                                     "type": "object",
                                     "properties": {
                                         "body": {
-                                            "$ref": "#/definitions/dynamicconfig.Entry"
+                                            "$ref": "#/definitions/httptransport.ConfigEntryResponseBody"
                                         }
                                     }
                                 }
@@ -93,7 +93,7 @@ const docTemplate = `{
                                     "type": "object",
                                     "properties": {
                                         "body": {
-                                            "$ref": "#/definitions/dynamicconfig.Page"
+                                            "$ref": "#/definitions/httptransport.ConfigPageResponseBody"
                                         }
                                     }
                                 }
@@ -137,7 +137,7 @@ const docTemplate = `{
                                     "type": "object",
                                     "properties": {
                                         "body": {
-                                            "$ref": "#/definitions/dynamicconfig.Entry"
+                                            "$ref": "#/definitions/httptransport.ConfigEntryResponseBody"
                                         }
                                     }
                                 }
@@ -181,7 +181,7 @@ const docTemplate = `{
                                     "type": "object",
                                     "properties": {
                                         "body": {
-                                            "$ref": "#/definitions/dynamicconfig.Entry"
+                                            "$ref": "#/definitions/httptransport.ConfigEntryResponseBody"
                                         }
                                     }
                                 }
@@ -225,7 +225,7 @@ const docTemplate = `{
                                     "type": "object",
                                     "properties": {
                                         "body": {
-                                            "$ref": "#/definitions/dynamicconfig.Entry"
+                                            "$ref": "#/definitions/httptransport.ConfigEntryResponseBody"
                                         }
                                     }
                                 }
@@ -269,7 +269,7 @@ const docTemplate = `{
                                     "type": "object",
                                     "properties": {
                                         "body": {
-                                            "$ref": "#/definitions/dynamicconfig.Entry"
+                                            "$ref": "#/definitions/httptransport.ConfigEntryResponseBody"
                                         }
                                     }
                                 }
@@ -313,7 +313,7 @@ const docTemplate = `{
                                     "type": "object",
                                     "properties": {
                                         "body": {
-                                            "$ref": "#/definitions/dynamicconfig.Entry"
+                                            "$ref": "#/definitions/httptransport.ConfigEntryResponseBody"
                                         }
                                     }
                                 }
@@ -349,7 +349,19 @@ const docTemplate = `{
                     "200": {
                         "description": "OK",
                         "schema": {
-                            "$ref": "#/definitions/httptransport.Response"
+                            "allOf": [
+                                {
+                                    "$ref": "#/definitions/httptransport.Response"
+                                },
+                                {
+                                    "type": "object",
+                                    "properties": {
+                                        "body": {
+                                            "$ref": "#/definitions/httptransport.ResolveConfigResponseBody"
+                                        }
+                                    }
+                                }
+                            ]
                         }
                     }
                 }
@@ -530,7 +542,32 @@ const docTemplate = `{
                 }
             }
         },
-        "dynamicconfig.Entry": {
+        "health.Dependency": {
+            "type": "object",
+            "properties": {
+                "latency": {
+                    "type": "string"
+                },
+                "status": {
+                    "type": "string"
+                }
+            }
+        },
+        "health.Status": {
+            "type": "object",
+            "properties": {
+                "dependencies": {
+                    "type": "object",
+                    "additionalProperties": {
+                        "$ref": "#/definitions/health.Dependency"
+                    }
+                },
+                "status": {
+                    "type": "string"
+                }
+            }
+        },
+        "httptransport.ConfigEntryResponseBody": {
             "type": "object",
             "properties": {
                 "created_at": {
@@ -584,59 +621,9 @@ const docTemplate = `{
                 "updated_by": {
                     "type": "string"
                 },
-                "value": {
-                    "type": "array",
-                    "items": {
-                        "type": "integer"
-                    }
-                },
+                "value": {},
                 "version": {
                     "type": "integer"
-                }
-            }
-        },
-        "dynamicconfig.Page": {
-            "type": "object",
-            "properties": {
-                "entries": {
-                    "type": "array",
-                    "items": {
-                        "$ref": "#/definitions/dynamicconfig.Entry"
-                    }
-                },
-                "page": {
-                    "type": "integer"
-                },
-                "page_size": {
-                    "type": "integer"
-                },
-                "total": {
-                    "type": "integer"
-                }
-            }
-        },
-        "health.Dependency": {
-            "type": "object",
-            "properties": {
-                "latency": {
-                    "type": "string"
-                },
-                "status": {
-                    "type": "string"
-                }
-            }
-        },
-        "health.Status": {
-            "type": "object",
-            "properties": {
-                "dependencies": {
-                    "type": "object",
-                    "additionalProperties": {
-                        "$ref": "#/definitions/health.Dependency"
-                    }
-                },
-                "status": {
-                    "type": "string"
                 }
             }
         },
@@ -652,6 +639,26 @@ const docTemplate = `{
                 },
                 "id": {
                     "type": "string"
+                }
+            }
+        },
+        "httptransport.ConfigPageResponseBody": {
+            "type": "object",
+            "properties": {
+                "entries": {
+                    "type": "array",
+                    "items": {
+                        "$ref": "#/definitions/httptransport.ConfigEntryResponseBody"
+                    }
+                },
+                "page": {
+                    "type": "integer"
+                },
+                "page_size": {
+                    "type": "integer"
+                },
+                "total": {
+                    "type": "integer"
                 }
             }
         },
@@ -748,6 +755,20 @@ const docTemplate = `{
                     "type": "string"
                 },
                 "tenant_id": {
+                    "type": "string"
+                }
+            }
+        },
+        "httptransport.ResolveConfigResponseBody": {
+            "type": "object",
+            "properties": {
+                "entries": {
+                    "type": "array",
+                    "items": {
+                        "$ref": "#/definitions/httptransport.ConfigEntryResponseBody"
+                    }
+                },
+                "etag": {
                     "type": "string"
                 }
             }

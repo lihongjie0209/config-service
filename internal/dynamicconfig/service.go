@@ -12,8 +12,8 @@ import (
 	"github.com/jmoiron/sqlx"
 	"github.com/lihongjie0209/config-service/internal/apperror"
 	"github.com/lihongjie0209/config-service/internal/database"
-	"github.com/lihongjie0209/config-service/internal/principal"
 	"github.com/lihongjie0209/microservice-platform-go/eventbus"
+	platformprincipal "github.com/lihongjie0209/microservice-platform-go/principal"
 	configv1 "github.com/lihongjie0209/platform-protos/gen/go/platform/config/v1"
 	"go.uber.org/fx"
 	"google.golang.org/protobuf/proto"
@@ -45,9 +45,12 @@ func (s *Service) PutDraft(ctx context.Context, value Entry, expectedVersion int
 	if sensitiveKey(value.Key) && value.SecretRef == "" {
 		return Entry{}, apperror.Invalid("sensitive configuration must use secret_ref", nil)
 	}
-	caller, ok := principal.FromContext(ctx)
+	caller, ok := platformprincipal.FromContext(ctx)
 	if !ok {
 		return Entry{}, apperror.Unauthorized("authenticated actor is required")
+	}
+	if err := enforceTenant(caller, value.TenantID); err != nil {
+		return Entry{}, err
 	}
 	now := s.now()
 	current, err := s.repository.GetByScope(ctx, value.Environment, value.TenantID, value.Service, value.Key)
@@ -58,8 +61,8 @@ func (s *Service) PutDraft(ctx context.Context, value Entry, expectedVersion int
 		value.Version = 1
 		value.CreatedAt = now
 		value.UpdatedAt = now
-		value.CreatedBy = caller.Subject
-		value.UpdatedBy = caller.Subject
+		value.CreatedBy = caller.ID
+		value.UpdatedBy = caller.ID
 		err = s.transactor.Within(ctx, nil, func(tx *sqlx.Tx) error { return s.repository.Insert(ctx, tx, value) })
 		return value, translate(err)
 	}
@@ -69,7 +72,7 @@ func (s *Service) PutDraft(ctx context.Context, value Entry, expectedVersion int
 	if expectedVersion < 1 {
 		return Entry{}, apperror.Invalid("expected_version is required for an existing entry", nil)
 	}
-	current.Value, current.SecretRef, current.Status, current.RolloutPercentage, current.Revision, current.UpdatedAt, current.UpdatedBy = value.Value, value.SecretRef, "draft", value.RolloutPercentage, current.Revision+1, now, caller.Subject
+	current.Value, current.SecretRef, current.Status, current.RolloutPercentage, current.Revision, current.UpdatedAt, current.UpdatedBy = value.Value, value.SecretRef, "draft", value.RolloutPercentage, current.Revision+1, now, caller.ID
 	current.ReviewComment, current.ReviewedBy, current.ReviewedAt = "", "", nil
 	err = s.transactor.Within(ctx, nil, func(tx *sqlx.Tx) error { return s.repository.Update(ctx, tx, current, expectedVersion) })
 	if err != nil {
@@ -117,16 +120,19 @@ func (s *Service) review(ctx context.Context, id string, expected int64, statusV
 	if current.Status != "pending_approval" {
 		return Entry{}, apperror.Conflict("configuration is not pending approval", nil)
 	}
-	caller, ok := principal.FromContext(ctx)
+	caller, ok := platformprincipal.FromContext(ctx)
 	if !ok {
 		return Entry{}, apperror.Unauthorized("authenticated actor is required")
 	}
-	if caller.Subject == current.UpdatedBy {
+	if err := enforceTenant(caller, current.TenantID); err != nil {
+		return Entry{}, err
+	}
+	if caller.ID == current.UpdatedBy {
 		return Entry{}, apperror.Conflict("submitter cannot review their own configuration", nil)
 	}
 	now := s.now()
-	current.Status, current.ReviewComment, current.ReviewedBy, current.ReviewedAt = statusValue, strings.TrimSpace(comment), caller.Subject, &now
-	current.UpdatedAt, current.UpdatedBy = now, caller.Subject
+	current.Status, current.ReviewComment, current.ReviewedBy, current.ReviewedAt = statusValue, strings.TrimSpace(comment), caller.ID, &now
+	current.UpdatedAt, current.UpdatedBy = now, caller.ID
 	err = s.transactor.Within(ctx, nil, func(tx *sqlx.Tx) error {
 		if err := s.repository.UpdateRevisionReview(ctx, tx, current, "pending_approval"); err != nil {
 			return err
@@ -135,18 +141,21 @@ func (s *Service) review(ctx context.Context, id string, expected int64, statusV
 			return err
 		}
 		current.Version = expected + 1
-		return s.addChangedEvent(ctx, tx, current, statusValue, caller.Subject)
+		return s.addChangedEvent(ctx, tx, current, statusValue, caller.ID)
 	})
 	return current, translate(err)
 }
 func (s *Service) changeStatus(ctx context.Context, current Entry, expected int64, statusValue string, snapshot bool) (Entry, error) {
-	caller, ok := principal.FromContext(ctx)
+	caller, ok := platformprincipal.FromContext(ctx)
 	if !ok {
 		return Entry{}, apperror.Unauthorized("authenticated actor is required")
 	}
+	if err := enforceTenant(caller, current.TenantID); err != nil {
+		return Entry{}, err
+	}
 	current.Status = statusValue
 	current.UpdatedAt = s.now()
-	current.UpdatedBy = caller.Subject
+	current.UpdatedBy = caller.ID
 	err := s.transactor.Within(ctx, nil, func(tx *sqlx.Tx) error {
 		if err := s.repository.Update(ctx, tx, current, expected); err != nil {
 			return err
@@ -157,7 +166,7 @@ func (s *Service) changeStatus(ctx context.Context, current Entry, expected int6
 				return err
 			}
 		}
-		return s.addChangedEvent(ctx, tx, current, statusValue, caller.Subject)
+		return s.addChangedEvent(ctx, tx, current, statusValue, caller.ID)
 	})
 	return current, translate(err)
 }
@@ -175,12 +184,15 @@ func (s *Service) Rollback(ctx context.Context, id string, target, expected int6
 	}
 	current.Value, current.SecretRef, current.RolloutPercentage, current.Status, current.Revision = revision.Value, revision.SecretRef, revision.RolloutPercentage, "published", current.Revision+1
 	current.PublishedRevision = current.Revision
-	caller, ok := principal.FromContext(ctx)
+	caller, ok := platformprincipal.FromContext(ctx)
 	if !ok {
 		return Entry{}, apperror.Unauthorized("authenticated actor is required")
 	}
+	if err := enforceTenant(caller, current.TenantID); err != nil {
+		return Entry{}, err
+	}
 	current.UpdatedAt = s.now()
-	current.UpdatedBy = caller.Subject
+	current.UpdatedBy = caller.ID
 	err = s.transactor.Within(ctx, nil, func(tx *sqlx.Tx) error {
 		if err := s.repository.Update(ctx, tx, current, expected); err != nil {
 			return err
@@ -189,7 +201,7 @@ func (s *Service) Rollback(ctx context.Context, id string, target, expected int6
 		if err := s.repository.Snapshot(ctx, tx, current); err != nil {
 			return err
 		}
-		return s.addChangedEvent(ctx, tx, current, "rolled_back", caller.Subject)
+		return s.addChangedEvent(ctx, tx, current, "rolled_back", caller.ID)
 	})
 	return current, translate(err)
 }
@@ -213,6 +225,13 @@ func (s *Service) addChangedEvent(ctx context.Context, tx *sqlx.Tx, entry Entry,
 	return s.repository.AddOutbox(ctx, tx, OutboxEvent{ID: envelope.GetEventId(), Subject: "platform.config.entry.changed.v1", Envelope: encoded, AvailableAt: entry.UpdatedAt, CreatedAt: entry.UpdatedAt, UpdatedAt: entry.UpdatedAt, CreatedBy: actor, UpdatedBy: actor})
 }
 func (s *Service) Resolve(ctx context.Context, environment, tenantID, service, subject string, keys []string) ([]Entry, string, error) {
+	caller, ok := platformprincipal.FromContext(ctx)
+	if !ok {
+		return nil, "", apperror.Unauthorized("authenticated actor is required")
+	}
+	if err := enforceTenant(caller, tenantID); err != nil {
+		return nil, "", err
+	}
 	values, err := s.repository.Resolve(ctx, environment, tenantID, service, keys)
 	if err != nil {
 		return nil, "", translate(err)
@@ -237,6 +256,13 @@ func (s *Service) Resolve(ctx context.Context, environment, tenantID, service, s
 	return result, fmt.Sprintf("%x", hash.Sum(nil)), nil
 }
 func (s *Service) List(ctx context.Context, environment, tenantID, service string, page, pageSize int) (Page, error) {
+	caller, ok := platformprincipal.FromContext(ctx)
+	if !ok {
+		return Page{}, apperror.Unauthorized("authenticated actor is required")
+	}
+	if err := enforceTenant(caller, tenantID); err != nil {
+		return Page{}, err
+	}
 	if page <= 0 {
 		page = 1
 	}
@@ -248,6 +274,12 @@ func (s *Service) List(ctx context.Context, environment, tenantID, service strin
 	}
 	values, total, err := s.repository.List(ctx, environment, tenantID, service, pageSize, (page-1)*pageSize)
 	return Page{Entries: values, Total: total, Page: page, PageSize: pageSize}, translate(err)
+}
+func enforceTenant(caller platformprincipal.Principal, requestedTenantID string) error {
+	if caller.Type == platformprincipal.TypeUser && (strings.TrimSpace(caller.TenantID) == "" || caller.TenantID != strings.TrimSpace(requestedTenantID)) {
+		return apperror.Forbidden("tenant access denied")
+	}
+	return nil
 }
 func sensitiveKey(key string) bool {
 	for _, part := range []string{"password", "secret", "token", "private_key", "api_key"} {
