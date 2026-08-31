@@ -21,6 +21,7 @@ import (
 	"github.com/lihongjie0209/config-service/internal/idempotency"
 	"github.com/lihongjie0209/config-service/internal/observability"
 	"github.com/lihongjie0209/config-service/internal/requestid"
+	platformauthz "github.com/lihongjie0209/microservice-platform-go/authz"
 	platformprincipal "github.com/lihongjie0209/microservice-platform-go/principal"
 
 	commonv1 "github.com/lihongjie0209/platform-protos/gen/go/platform/common/v1"
@@ -44,11 +45,11 @@ type Server struct {
 	logger  *slog.Logger
 }
 
-func NewServer(lc fx.Lifecycle, cfg config.Config, authService *auth.Service, healthService *apphealth.Service, configService *configdomain.Service, metrics *observability.Metrics, logger *slog.Logger) (*Server, error) {
+func NewServer(lc fx.Lifecycle, cfg config.Config, authService *auth.Service, authorizer platformauthz.Authorizer, healthService *apphealth.Service, configService *configdomain.Service, metrics *observability.Metrics, logger *slog.Logger) (*Server, error) {
 	options := []grpc.ServerOption{
 		grpc.MaxRecvMsgSize(cfg.GRPC.MaxReceiveBytes),
 		grpc.StatsHandler(otelgrpc.NewServerHandler()),
-		grpc.ChainUnaryInterceptor(environmentInterceptor(cfg.Runtime.ActiveProfile), requestIDInterceptor, idempotencyInterceptor, recoveryInterceptor(logger), authInterceptor(authService, cfg.Auth), metricsInterceptor(metrics, logger)),
+		grpc.ChainUnaryInterceptor(environmentInterceptor(cfg.Runtime.ActiveProfile), requestIDInterceptor, idempotencyInterceptor, recoveryInterceptor(logger), authInterceptor(authService, cfg.Auth), platformauthz.UnaryServerInterceptor(authorizer, configGRPCRequirement(cfg.Authorization.Enabled)), metricsInterceptor(metrics, logger)),
 		grpc.ChainStreamInterceptor(environmentStreamInterceptor(cfg.Runtime.ActiveProfile), requestIDStreamInterceptor, idempotencyStreamInterceptor, recoveryStreamInterceptor(logger), authStreamInterceptor(authService, cfg.Auth), metricsStreamInterceptor(metrics, logger)),
 	}
 	if cfg.GRPC.TLS.Enabled {
@@ -67,6 +68,26 @@ func NewServer(lc fx.Lifecycle, cfg config.Config, authService *auth.Service, he
 	server := &Server{server: grpcServer, address: cfg.GRPC.Address, logger: logger}
 	lc.Append(fx.Hook{OnStart: server.start(cfg.GRPC.Enabled), OnStop: server.stop})
 	return server, nil
+}
+
+func configGRPCRequirement(enabled bool) platformauthz.GRPCResolver {
+	return func(method string) (platformauthz.Requirement, bool) {
+		if !enabled {
+			return platformauthz.Requirement{}, false
+		}
+		requirements := map[string]platformauthz.Requirement{
+			configv1.ConfigService_PutDraft_FullMethodName:          {Resource: "config.entry", Action: "update"},
+			configv1.ConfigService_SubmitForApproval_FullMethodName: {Resource: "config.entry", Action: "submit"},
+			configv1.ConfigService_Approve_FullMethodName:           {Resource: "config.entry", Action: "approve"},
+			configv1.ConfigService_Reject_FullMethodName:            {Resource: "config.entry", Action: "reject"},
+			configv1.ConfigService_Publish_FullMethodName:           {Resource: "config.entry", Action: "publish"},
+			configv1.ConfigService_Rollback_FullMethodName:          {Resource: "config.entry", Action: "rollback"},
+			configv1.ConfigService_Resolve_FullMethodName:           {Resource: "config.entry", Action: "read"},
+			configv1.ConfigService_List_FullMethodName:              {Resource: "config.entry", Action: "list"},
+		}
+		requirement, ok := requirements[method]
+		return requirement, ok
+	}
 }
 
 type configServer struct {

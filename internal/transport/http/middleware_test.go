@@ -1,6 +1,7 @@
 package httptransport
 
 import (
+	"context"
 	"encoding/json"
 	"io"
 	"log/slog"
@@ -12,8 +13,63 @@ import (
 	"github.com/gin-gonic/gin"
 	"github.com/lihongjie0209/config-service/internal/auth"
 	"github.com/lihongjie0209/config-service/internal/config"
+	platformauthz "github.com/lihongjie0209/microservice-platform-go/authz"
 	platformprincipal "github.com/lihongjie0209/microservice-platform-go/principal"
 )
+
+type authorizationStub struct{ err error }
+
+func (a authorizationStub) Authorize(context.Context, platformprincipal.Principal, platformauthz.Requirement) error {
+	return a.err
+}
+
+func TestConfigHTTPRequirementCoversEveryBusinessRoute(t *testing.T) {
+	t.Parallel()
+	routes := []string{
+		"/api/v1/config/entries/put-draft", "/api/v1/config/entries/submit",
+		"/api/v1/config/entries/approve", "/api/v1/config/entries/reject",
+		"/api/v1/config/entries/publish", "/api/v1/config/entries/rollback",
+		"/api/v1/config/resolve", "/api/v1/config/entries/list",
+	}
+	for _, route := range routes {
+		requirement, ok := configHTTPRequirement(route)
+		if !ok || requirement.Resource == "" || requirement.Action == "" {
+			t.Fatalf("route %q requirement = %+v, %v", route, requirement, ok)
+		}
+	}
+	if _, ok := configHTTPRequirement("/api/v1/version"); ok {
+		t.Fatal("version must not require a domain permission")
+	}
+}
+
+func TestAuthorizationFailsClosedAndClassifiesOutage(t *testing.T) {
+	t.Parallel()
+	gin.SetMode(gin.TestMode)
+	tests := []struct {
+		name   string
+		err    error
+		status int
+	}{
+		{name: "denied", err: platformauthz.ErrDenied, status: http.StatusForbidden},
+		{name: "unavailable", err: platformauthz.ErrDecisionUnavailable, status: http.StatusServiceUnavailable},
+	}
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			router := gin.New()
+			router.Use(RequestID(), func(c *gin.Context) {
+				principal := platformprincipal.Principal{ID: "user-1", Type: platformprincipal.TypeUser, TenantID: "tenant-1", MembershipID: "membership-1"}
+				c.Request = c.Request.WithContext(platformprincipal.WithContext(c.Request.Context(), principal))
+				c.Next()
+			}, Authorization(true, authorizationStub{err: test.err}, slog.New(slog.NewTextHandler(io.Discard, nil))))
+			router.POST("/api/v1/config/resolve", func(c *gin.Context) { OK(c, nil) })
+			recorder := httptest.NewRecorder()
+			router.ServeHTTP(recorder, httptest.NewRequest(http.MethodPost, "/api/v1/config/resolve", nil))
+			if recorder.Code != test.status {
+				t.Fatalf("status = %d, want %d", recorder.Code, test.status)
+			}
+		})
+	}
+}
 
 func TestRequestID(t *testing.T) {
 	t.Parallel()

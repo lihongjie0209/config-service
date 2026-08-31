@@ -8,10 +8,35 @@ import (
 	"github.com/lihongjie0209/config-service/internal/auth"
 	"github.com/lihongjie0209/config-service/internal/config"
 	platformprincipal "github.com/lihongjie0209/microservice-platform-go/principal"
+	configv1 "github.com/lihongjie0209/platform-protos/gen/go/platform/config/v1"
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/metadata"
 	"google.golang.org/grpc/status"
 )
+
+func TestConfigGRPCRequirementCoversEveryBusinessMethod(t *testing.T) {
+	t.Parallel()
+	resolve := configGRPCRequirement(true)
+	methods := []string{
+		configv1.ConfigService_PutDraft_FullMethodName,
+		configv1.ConfigService_SubmitForApproval_FullMethodName,
+		configv1.ConfigService_Approve_FullMethodName,
+		configv1.ConfigService_Reject_FullMethodName,
+		configv1.ConfigService_Publish_FullMethodName,
+		configv1.ConfigService_Rollback_FullMethodName,
+		configv1.ConfigService_Resolve_FullMethodName,
+		configv1.ConfigService_List_FullMethodName,
+	}
+	for _, method := range methods {
+		requirement, ok := resolve(method)
+		if !ok || requirement.Resource == "" || requirement.Action == "" {
+			t.Fatalf("method %q requirement = %+v, %v", method, requirement, ok)
+		}
+	}
+	if _, ok := configGRPCRequirement(false)(configv1.ConfigService_List_FullMethodName); ok {
+		t.Fatal("disabled authorization must not enforce")
+	}
+}
 
 func TestGRPCErrorMapsAuthenticationAndTenantDenial(t *testing.T) {
 	t.Parallel()

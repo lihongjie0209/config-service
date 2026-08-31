@@ -2,6 +2,7 @@ package httptransport
 
 import (
 	"context"
+	"errors"
 	"log/slog"
 	"mime"
 	"net/http"
@@ -18,6 +19,7 @@ import (
 	"github.com/lihongjie0209/config-service/internal/observability"
 	appLimit "github.com/lihongjie0209/config-service/internal/ratelimit"
 	"github.com/lihongjie0209/config-service/internal/requestid"
+	platformauthz "github.com/lihongjie0209/microservice-platform-go/authz"
 	platformprincipal "github.com/lihongjie0209/microservice-platform-go/principal"
 	"go.opentelemetry.io/otel/trace"
 )
@@ -219,9 +221,44 @@ func JWT(service *auth.Service, logger *slog.Logger) gin.HandlerFunc {
 			return
 		}
 		c.Set("subject", caller.ID)
-		c.Request = c.Request.WithContext(platformprincipal.WithContext(c.Request.Context(), caller))
+		ctx := platformprincipal.WithContext(c.Request.Context(), caller)
+		c.Request = c.Request.WithContext(platformauthz.WithCallerCredential(ctx, header))
 		c.Next()
 	}
+}
+
+func Authorization(enabled bool, authorizer platformauthz.Authorizer, logger *slog.Logger) gin.HandlerFunc {
+	return func(c *gin.Context) {
+		requirement, protected := configHTTPRequirement(c.FullPath())
+		if !enabled || !protected {
+			c.Next()
+			return
+		}
+		if err := platformauthz.Enforce(c.Request.Context(), authorizer, requirement); err != nil {
+			if errors.Is(err, platformauthz.ErrDecisionUnavailable) {
+				Fail(c, logger, apperror.Unavailable("authorization decision is unavailable", err))
+				return
+			}
+			Fail(c, logger, apperror.Forbidden("permission denied"))
+			return
+		}
+		c.Next()
+	}
+}
+
+func configHTTPRequirement(route string) (platformauthz.Requirement, bool) {
+	requirements := map[string]platformauthz.Requirement{
+		"/api/v1/config/entries/put-draft": {Resource: "config.entry", Action: "update"},
+		"/api/v1/config/entries/submit":    {Resource: "config.entry", Action: "submit"},
+		"/api/v1/config/entries/approve":   {Resource: "config.entry", Action: "approve"},
+		"/api/v1/config/entries/reject":    {Resource: "config.entry", Action: "reject"},
+		"/api/v1/config/entries/publish":   {Resource: "config.entry", Action: "publish"},
+		"/api/v1/config/entries/rollback":  {Resource: "config.entry", Action: "rollback"},
+		"/api/v1/config/resolve":           {Resource: "config.entry", Action: "read"},
+		"/api/v1/config/entries/list":      {Resource: "config.entry", Action: "list"},
+	}
+	requirement, ok := requirements[route]
+	return requirement, ok
 }
 
 func Authentication(service *auth.Service, logger *slog.Logger, cfg config.Auth) gin.HandlerFunc {
