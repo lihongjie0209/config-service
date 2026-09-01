@@ -47,6 +47,36 @@ func TestMigrationVersionsAreUniquePerDialect(t *testing.T) {
 	}
 }
 
+func TestMySQLApplicationScopeIndexesFitInnoDBLimit(t *testing.T) {
+	t.Parallel()
+
+	const (
+		maxIndexBytes = 3072
+		utf8mb4Bytes  = 4
+		uniqueChars   = 64 + 191 + 64 + 191 + 255
+		resolveChars  = 64 + 191 + 191 + 64
+	)
+	if uniqueChars*utf8mb4Bytes > maxIndexBytes {
+		t.Fatalf("application scope unique index needs %d bytes", uniqueChars*utf8mb4Bytes)
+	}
+	if resolveChars*utf8mb4Bytes > maxIndexBytes {
+		t.Fatalf("application scope resolve index needs %d bytes", resolveChars*utf8mb4Bytes)
+	}
+
+	path := filepath.Join("..", "..", "migrations", "mysql", "000006_application_overrides.up.sql")
+	contents, err := os.ReadFile(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	sql := string(contents)
+	if !strings.Contains(sql, "application_id VARCHAR(64)") {
+		t.Fatal("MySQL application_id must retain its bounded identifier width")
+	}
+	if strings.Contains(sql, "application_id,status,config_key") {
+		t.Fatal("resolve index must not include columns that exceed the InnoDB key budget")
+	}
+}
+
 func TestWithMigrationTable(t *testing.T) {
 	t.Parallel()
 	result, err := withMigrationOptions("postgres://user:pass@db/app?sslmode=disable", "orders_db", "orders_schema_migrations", "orders")
