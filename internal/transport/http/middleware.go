@@ -248,14 +248,14 @@ func Authorization(enabled bool, authorizer platformauthz.Authorizer, logger *sl
 
 func configHTTPRequirement(route string) (platformauthz.Requirement, bool) {
 	requirements := map[string]platformauthz.Requirement{
-		"/api/v1/config/entries/put-draft": {Resource: "config.entry", Action: "update"},
-		"/api/v1/config/entries/submit":    {Resource: "config.entry", Action: "submit"},
-		"/api/v1/config/entries/approve":   {Resource: "config.entry", Action: "approve"},
-		"/api/v1/config/entries/reject":    {Resource: "config.entry", Action: "reject"},
-		"/api/v1/config/entries/publish":   {Resource: "config.entry", Action: "publish"},
-		"/api/v1/config/entries/rollback":  {Resource: "config.entry", Action: "rollback"},
-		"/api/v1/config/resolve":           {Resource: "config.entry", Action: "read"},
-		"/api/v1/config/entries/list":      {Resource: "config.entry", Action: "list"},
+		"/api/v1/config/entries/put-draft": {Resource: "config.entry", Action: "update", Scope: platformauthz.ScopePrincipal},
+		"/api/v1/config/entries/submit":    {Resource: "config.entry", Action: "submit", Scope: platformauthz.ScopePrincipal},
+		"/api/v1/config/entries/approve":   {Resource: "config.entry", Action: "approve", Scope: platformauthz.ScopePrincipal},
+		"/api/v1/config/entries/reject":    {Resource: "config.entry", Action: "reject", Scope: platformauthz.ScopePrincipal},
+		"/api/v1/config/entries/publish":   {Resource: "config.entry", Action: "publish", Scope: platformauthz.ScopePrincipal},
+		"/api/v1/config/entries/rollback":  {Resource: "config.entry", Action: "rollback", Scope: platformauthz.ScopePrincipal},
+		"/api/v1/config/resolve":           {Resource: "config.entry", Action: "read", Scope: platformauthz.ScopePrincipal},
+		"/api/v1/config/entries/list":      {Resource: "config.entry", Action: "list", Scope: platformauthz.ScopePrincipal},
 	}
 	requirement, ok := requirements[route]
 	return requirement, ok

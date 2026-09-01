@@ -76,14 +76,14 @@ func configGRPCRequirement(enabled bool) platformauthz.GRPCResolver {
 			return platformauthz.Requirement{}, false
 		}
 		requirements := map[string]platformauthz.Requirement{
-			configv1.ConfigService_PutDraft_FullMethodName:          {Resource: "config.entry", Action: "update"},
-			configv1.ConfigService_SubmitForApproval_FullMethodName: {Resource: "config.entry", Action: "submit"},
-			configv1.ConfigService_Approve_FullMethodName:           {Resource: "config.entry", Action: "approve"},
-			configv1.ConfigService_Reject_FullMethodName:            {Resource: "config.entry", Action: "reject"},
-			configv1.ConfigService_Publish_FullMethodName:           {Resource: "config.entry", Action: "publish"},
-			configv1.ConfigService_Rollback_FullMethodName:          {Resource: "config.entry", Action: "rollback"},
-			configv1.ConfigService_Resolve_FullMethodName:           {Resource: "config.entry", Action: "read"},
-			configv1.ConfigService_List_FullMethodName:              {Resource: "config.entry", Action: "list"},
+			configv1.ConfigService_PutDraft_FullMethodName:          {Resource: "config.entry", Action: "update", Scope: platformauthz.ScopePrincipal},
+			configv1.ConfigService_SubmitForApproval_FullMethodName: {Resource: "config.entry", Action: "submit", Scope: platformauthz.ScopePrincipal},
+			configv1.ConfigService_Approve_FullMethodName:           {Resource: "config.entry", Action: "approve", Scope: platformauthz.ScopePrincipal},
+			configv1.ConfigService_Reject_FullMethodName:            {Resource: "config.entry", Action: "reject", Scope: platformauthz.ScopePrincipal},
+			configv1.ConfigService_Publish_FullMethodName:           {Resource: "config.entry", Action: "publish", Scope: platformauthz.ScopePrincipal},
+			configv1.ConfigService_Rollback_FullMethodName:          {Resource: "config.entry", Action: "rollback", Scope: platformauthz.ScopePrincipal},
+			configv1.ConfigService_Resolve_FullMethodName:           {Resource: "config.entry", Action: "read", Scope: platformauthz.ScopePrincipal},
+			configv1.ConfigService_List_FullMethodName:              {Resource: "config.entry", Action: "list", Scope: platformauthz.ScopePrincipal},
 		}
 		requirement, ok := requirements[method]
 		return requirement, ok
