@@ -6,6 +6,7 @@ type Entry struct {
 	ID                string     `db:"id" json:"id"`
 	Environment       string     `db:"environment" json:"environment"`
 	TenantID          string     `db:"tenant_id" json:"tenant_id"`
+	ApplicationID     string     `db:"application_id" json:"application_id"`
 	Service           string     `db:"service" json:"service"`
 	Key               string     `db:"config_key" json:"key"`
 	Value             []byte     `db:"config_value" json:"value"`

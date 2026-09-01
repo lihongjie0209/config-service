@@ -27,6 +27,7 @@ type PutConfigRequest struct {
 	ID                string          `json:"id"`
 	Environment       string          `json:"environment" binding:"required"`
 	TenantID          string          `json:"tenant_id"`
+	ApplicationID     string          `json:"application_id"`
 	Service           string          `json:"service" binding:"required"`
 	Key               string          `json:"key" binding:"required"`
 	Value             json.RawMessage `json:"value" swaggertype:"object"`
@@ -49,24 +50,27 @@ type RollbackConfigRequest struct {
 	ExpectedVersion int64  `json:"expected_version" binding:"required"`
 }
 type ResolveConfigRequest struct {
-	Environment string   `json:"environment" binding:"required"`
-	TenantID    string   `json:"tenant_id"`
-	Service     string   `json:"service" binding:"required"`
-	Keys        []string `json:"keys" binding:"required"`
-	SubjectID   string   `json:"subject_id"`
+	Environment   string   `json:"environment" binding:"required"`
+	TenantID      string   `json:"tenant_id"`
+	ApplicationID string   `json:"application_id"`
+	Service       string   `json:"service" binding:"required"`
+	Keys          []string `json:"keys" binding:"required"`
+	SubjectID     string   `json:"subject_id"`
 }
 type ListConfigRequest struct {
-	Environment string `json:"environment" binding:"required"`
-	TenantID    string `json:"tenant_id"`
-	Service     string `json:"service" binding:"required"`
-	Page        int    `json:"page"`
-	PageSize    int    `json:"page_size"`
+	Environment   string `json:"environment" binding:"required"`
+	TenantID      string `json:"tenant_id"`
+	ApplicationID string `json:"application_id"`
+	Service       string `json:"service" binding:"required"`
+	Page          int    `json:"page"`
+	PageSize      int    `json:"page_size"`
 }
 
 type ConfigEntryResponseBody struct {
 	ID                string     `json:"id"`
 	Environment       string     `json:"environment"`
 	TenantID          string     `json:"tenant_id"`
+	ApplicationID     string     `json:"application_id"`
 	Service           string     `json:"service"`
 	Key               string     `json:"key"`
 	Value             any        `json:"value,omitempty"`
@@ -170,7 +174,7 @@ func (h *Handler) PutConfig(c *gin.Context) {
 		Fail(c, h.logger, apperror.Invalid("invalid json request", err))
 		return
 	}
-	value, err := h.configs.PutDraft(c.Request.Context(), configdomain.Entry{ID: request.ID, Environment: request.Environment, TenantID: request.TenantID, Service: request.Service, Key: request.Key, Value: request.Value, SecretRef: request.SecretRef, RolloutPercentage: request.RolloutPercentage}, request.ExpectedVersion)
+	value, err := h.configs.PutDraft(c.Request.Context(), configdomain.Entry{ID: request.ID, Environment: request.Environment, TenantID: request.TenantID, ApplicationID: request.ApplicationID, Service: request.Service, Key: request.Key, Value: request.Value, SecretRef: request.SecretRef, RolloutPercentage: request.RolloutPercentage}, request.ExpectedVersion)
 	if err != nil {
 		Fail(c, h.logger, err)
 		return
@@ -294,7 +298,7 @@ func (h *Handler) ResolveConfig(c *gin.Context) {
 		Fail(c, h.logger, apperror.Invalid("invalid json request", err))
 		return
 	}
-	values, etag, err := h.configs.Resolve(c.Request.Context(), request.Environment, request.TenantID, request.Service, request.SubjectID, request.Keys)
+	values, etag, err := h.configs.Resolve(c.Request.Context(), request.Environment, request.TenantID, request.ApplicationID, request.Service, request.SubjectID, request.Keys)
 	if err != nil {
 		Fail(c, h.logger, err)
 		return
@@ -315,7 +319,7 @@ func (h *Handler) ListConfig(c *gin.Context) {
 		Fail(c, h.logger, apperror.Invalid("invalid json request", err))
 		return
 	}
-	value, err := h.configs.List(c.Request.Context(), request.Environment, request.TenantID, request.Service, request.Page, request.PageSize)
+	value, err := h.configs.List(c.Request.Context(), request.Environment, request.TenantID, request.ApplicationID, request.Service, request.Page, request.PageSize)
 	if err != nil {
 		Fail(c, h.logger, err)
 		return
@@ -337,7 +341,7 @@ func configEntryResponse(entry configdomain.Entry) ConfigEntryResponseBody {
 		_ = json.Unmarshal(entry.Value, &value)
 	}
 	return ConfigEntryResponseBody{
-		ID: entry.ID, Environment: entry.Environment, TenantID: entry.TenantID, Service: entry.Service, Key: entry.Key,
+		ID: entry.ID, Environment: entry.Environment, TenantID: entry.TenantID, ApplicationID: entry.ApplicationID, Service: entry.Service, Key: entry.Key,
 		Value: value, SecretRef: entry.SecretRef, Status: entry.Status, Revision: entry.Revision,
 		RolloutPercentage: entry.RolloutPercentage, PublishedRevision: entry.PublishedRevision,
 		ReviewComment: entry.ReviewComment, ReviewedBy: entry.ReviewedBy, ReviewedAt: entry.ReviewedAt,

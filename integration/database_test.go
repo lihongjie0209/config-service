@@ -59,7 +59,7 @@ func TestRepositoryAndMigrations(t *testing.T) {
 			t.Cleanup(func() { _ = db.Close() })
 			service := configdomain.NewService(configdomain.NewRepository(db), appdb.NewTransactor(db))
 			actorCtx := platformprincipal.WithContext(ctx, platformprincipal.Principal{ID: "admin-1", Type: platformprincipal.TypeUser, TenantID: "tenant-1"})
-			created, err := service.PutDraft(actorCtx, configdomain.Entry{Environment: "test", TenantID: "tenant-1", Service: "web", Key: "feature.checkout", Value: []byte(`true`), RolloutPercentage: 100}, 0)
+			created, err := service.PutDraft(actorCtx, configdomain.Entry{Environment: "test", TenantID: "tenant-1", ApplicationID: "app-1", Service: "web", Key: "feature.checkout", Value: []byte(`true`), RolloutPercentage: 100}, 0)
 			if err != nil {
 				t.Fatalf("put draft: %v", err)
 			}
@@ -76,7 +76,7 @@ func TestRepositoryAndMigrations(t *testing.T) {
 			if err != nil {
 				t.Fatalf("publish: %v", err)
 			}
-			resolved, etag, err := service.Resolve(actorCtx, "test", "tenant-1", "web", "user-1", []string{"feature.checkout"})
+			resolved, etag, err := service.Resolve(actorCtx, "test", "tenant-1", "app-1", "web", "user-1", []string{"feature.checkout"})
 			if err != nil || len(resolved) != 1 || etag == "" || published.Status != "published" {
 				t.Fatalf("resolve=%+v etag=%q published=%+v err=%v", resolved, etag, published, err)
 			}

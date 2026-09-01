@@ -141,7 +141,7 @@ func (s *configServer) Rollback(ctx context.Context, request *configv1.RollbackR
 	return &configv1.RollbackResponse{Entry: toProtoConfig(value)}, nil
 }
 func (s *configServer) Resolve(ctx context.Context, request *configv1.ResolveRequest) (*configv1.ResolveResponse, error) {
-	values, etag, err := s.service.Resolve(ctx, request.GetEnvironment(), request.GetTenantId(), request.GetService(), request.GetSubjectId(), request.GetKeys())
+	values, etag, err := s.service.Resolve(ctx, request.GetEnvironment(), request.GetTenantId(), request.GetApplicationId(), request.GetService(), request.GetSubjectId(), request.GetKeys())
 	if err != nil {
 		return nil, grpcError(err)
 	}
@@ -156,7 +156,7 @@ func (s *configServer) List(ctx context.Context, request *configv1.ListRequest) 
 	if request.GetPage() != nil {
 		page, pageSize = int(request.GetPage().GetPage()), int(request.GetPage().GetPageSize())
 	}
-	result, err := s.service.List(ctx, request.GetEnvironment(), request.GetTenantId(), request.GetService(), page, pageSize)
+	result, err := s.service.List(ctx, request.GetEnvironment(), request.GetTenantId(), request.GetApplicationId(), request.GetService(), page, pageSize)
 	if err != nil {
 		return nil, grpcError(err)
 	}
@@ -167,7 +167,7 @@ func (s *configServer) List(ctx context.Context, request *configv1.ListRequest) 
 	return response, nil
 }
 func fromProtoConfig(value *configv1.ConfigEntry) configdomain.Entry {
-	entry := configdomain.Entry{ID: value.GetId(), Environment: value.GetEnvironment(), TenantID: value.GetTenantId(), Service: value.GetService(), Key: value.GetKey(), Value: value.GetValue(), SecretRef: value.GetSecretRef(), Status: value.GetStatus(), Revision: value.GetRevision(), RolloutPercentage: value.GetRolloutPercentage(), PublishedRevision: value.GetPublishedRevision(), ReviewComment: value.GetReviewComment(), ReviewedBy: value.GetReviewedBy(), Version: value.GetVersion()}
+	entry := configdomain.Entry{ID: value.GetId(), Environment: value.GetEnvironment(), TenantID: value.GetTenantId(), ApplicationID: value.GetApplicationId(), Service: value.GetService(), Key: value.GetKey(), Value: value.GetValue(), SecretRef: value.GetSecretRef(), Status: value.GetStatus(), Revision: value.GetRevision(), RolloutPercentage: value.GetRolloutPercentage(), PublishedRevision: value.GetPublishedRevision(), ReviewComment: value.GetReviewComment(), ReviewedBy: value.GetReviewedBy(), Version: value.GetVersion()}
 	if value.GetReviewedAt() != nil && value.GetReviewedAt().IsValid() {
 		reviewedAt := value.GetReviewedAt().AsTime()
 		entry.ReviewedAt = &reviewedAt
@@ -175,7 +175,7 @@ func fromProtoConfig(value *configv1.ConfigEntry) configdomain.Entry {
 	return entry
 }
 func toProtoConfig(value configdomain.Entry) *configv1.ConfigEntry {
-	entry := &configv1.ConfigEntry{Id: value.ID, Environment: value.Environment, TenantId: value.TenantID, Service: value.Service, Key: value.Key, Value: value.Value, SecretRef: value.SecretRef, Status: value.Status, Revision: value.Revision, RolloutPercentage: value.RolloutPercentage, PublishedRevision: value.PublishedRevision, ReviewComment: value.ReviewComment, ReviewedBy: value.ReviewedBy, Version: value.Version, CreatedAt: timestamppb.New(value.CreatedAt), UpdatedAt: timestamppb.New(value.UpdatedAt), CreatedBy: value.CreatedBy, UpdatedBy: value.UpdatedBy}
+	entry := &configv1.ConfigEntry{Id: value.ID, Environment: value.Environment, TenantId: value.TenantID, ApplicationId: value.ApplicationID, Service: value.Service, Key: value.Key, Value: value.Value, SecretRef: value.SecretRef, Status: value.Status, Revision: value.Revision, RolloutPercentage: value.RolloutPercentage, PublishedRevision: value.PublishedRevision, ReviewComment: value.ReviewComment, ReviewedBy: value.ReviewedBy, Version: value.Version, CreatedAt: timestamppb.New(value.CreatedAt), UpdatedAt: timestamppb.New(value.UpdatedAt), CreatedBy: value.CreatedBy, UpdatedBy: value.UpdatedBy}
 	if value.ReviewedAt != nil {
 		entry.ReviewedAt = timestamppb.New(*value.ReviewedAt)
 	}

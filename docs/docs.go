@@ -570,6 +570,9 @@ const docTemplate = `{
         "httptransport.ConfigEntryResponseBody": {
             "type": "object",
             "properties": {
+                "application_id": {
+                    "type": "string"
+                },
                 "created_at": {
                     "type": "string"
                 },
@@ -669,6 +672,9 @@ const docTemplate = `{
                 "service"
             ],
             "properties": {
+                "application_id": {
+                    "type": "string"
+                },
                 "environment": {
                     "type": "string"
                 },
@@ -702,6 +708,9 @@ const docTemplate = `{
                 "service"
             ],
             "properties": {
+                "application_id": {
+                    "type": "string"
+                },
                 "environment": {
                     "type": "string"
                 },
@@ -739,6 +748,9 @@ const docTemplate = `{
                 "service"
             ],
             "properties": {
+                "application_id": {
+                    "type": "string"
+                },
                 "environment": {
                     "type": "string"
                 },

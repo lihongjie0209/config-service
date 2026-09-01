@@ -12,6 +12,7 @@ import (
 	"github.com/jmoiron/sqlx"
 	"github.com/lihongjie0209/config-service/internal/apperror"
 	"github.com/lihongjie0209/config-service/internal/database"
+	"github.com/lihongjie0209/microservice-platform-go/appaccess"
 	"github.com/lihongjie0209/microservice-platform-go/eventbus"
 	platformprincipal "github.com/lihongjie0209/microservice-platform-go/principal"
 	configv1 "github.com/lihongjie0209/platform-protos/gen/go/platform/config/v1"
@@ -21,22 +22,35 @@ import (
 )
 
 type Service struct {
-	repository Repository
-	transactor *database.Transactor
-	now        func() time.Time
+	repository   Repository
+	transactor   *database.Transactor
+	now          func() time.Time
+	applications appaccess.Verifier
 }
 
+type allowAllApplications struct{}
+
+func (allowAllApplications) Verify(context.Context, string, string) error { return nil }
+
 func NewService(repository Repository, transactor *database.Transactor) *Service {
-	return &Service{repository: repository, transactor: transactor, now: time.Now}
+	return &Service{repository: repository, transactor: transactor, applications: allowAllApplications{}, now: time.Now}
+}
+
+func NewRuntimeService(repository Repository, transactor *database.Transactor, applications appaccess.Verifier) (*Service, error) {
+	if applications == nil {
+		return nil, errors.New("application verifier is required")
+	}
+	return &Service{repository: repository, transactor: transactor, applications: applications, now: time.Now}, nil
 }
 
 func (s *Service) PutDraft(ctx context.Context, value Entry, expectedVersion int64) (Entry, error) {
 	value.Environment = strings.ToLower(strings.TrimSpace(value.Environment))
 	value.TenantID = strings.TrimSpace(value.TenantID)
+	value.ApplicationID = strings.TrimSpace(value.ApplicationID)
 	value.Service = strings.ToLower(strings.TrimSpace(value.Service))
 	value.Key = strings.ToLower(strings.TrimSpace(value.Key))
 	value.SecretRef = strings.TrimSpace(value.SecretRef)
-	if value.Environment == "" || value.Service == "" || value.Key == "" || value.RolloutPercentage < 0 || value.RolloutPercentage > 100 {
+	if value.Environment == "" || value.Service == "" || value.Key == "" || (value.TenantID == "" && value.ApplicationID != "") || value.RolloutPercentage < 0 || value.RolloutPercentage > 100 {
 		return Entry{}, apperror.Invalid("invalid config scope or rollout percentage", nil)
 	}
 	if (len(value.Value) == 0) == (value.SecretRef == "") {
@@ -52,8 +66,11 @@ func (s *Service) PutDraft(ctx context.Context, value Entry, expectedVersion int
 	if err := enforceTenant(caller, value.TenantID); err != nil {
 		return Entry{}, err
 	}
+	if err := s.verifyApplication(ctx, value.TenantID, value.ApplicationID); err != nil {
+		return Entry{}, err
+	}
 	now := s.now()
-	current, err := s.repository.GetByScope(ctx, value.Environment, value.TenantID, value.Service, value.Key)
+	current, err := s.repository.GetByScope(ctx, value.Environment, value.TenantID, value.ApplicationID, value.Service, value.Key)
 	if errors.Is(err, ErrNotFound) {
 		value.ID = uuid.NewString()
 		value.Status = "draft"
@@ -127,6 +144,9 @@ func (s *Service) review(ctx context.Context, id string, expected int64, statusV
 	if err := enforceTenant(caller, current.TenantID); err != nil {
 		return Entry{}, err
 	}
+	if err := s.verifyApplication(ctx, current.TenantID, current.ApplicationID); err != nil {
+		return Entry{}, err
+	}
 	if caller.ID == current.UpdatedBy {
 		return Entry{}, apperror.Conflict("submitter cannot review their own configuration", nil)
 	}
@@ -151,6 +171,9 @@ func (s *Service) changeStatus(ctx context.Context, current Entry, expected int6
 		return Entry{}, apperror.Unauthorized("authenticated actor is required")
 	}
 	if err := enforceTenant(caller, current.TenantID); err != nil {
+		return Entry{}, err
+	}
+	if err := s.verifyApplication(ctx, current.TenantID, current.ApplicationID); err != nil {
 		return Entry{}, err
 	}
 	current.Status = statusValue
@@ -191,6 +214,9 @@ func (s *Service) Rollback(ctx context.Context, id string, target, expected int6
 	if err := enforceTenant(caller, current.TenantID); err != nil {
 		return Entry{}, err
 	}
+	if err := s.verifyApplication(ctx, current.TenantID, current.ApplicationID); err != nil {
+		return Entry{}, err
+	}
 	current.UpdatedAt = s.now()
 	current.UpdatedBy = caller.ID
 	err = s.transactor.Within(ctx, nil, func(tx *sqlx.Tx) error {
@@ -207,14 +233,14 @@ func (s *Service) Rollback(ctx context.Context, id string, target, expected int6
 }
 
 func (s *Service) addChangedEvent(ctx context.Context, tx *sqlx.Tx, entry Entry, changeType, actor string) error {
-	payload := &configv1.ConfigChangedEvent{Entry: &configv1.ConfigEntry{Id: entry.ID, Environment: entry.Environment, TenantId: entry.TenantID, Service: entry.Service, Key: entry.Key, SecretRef: entry.SecretRef, Status: entry.Status, Revision: entry.Revision, RolloutPercentage: entry.RolloutPercentage, PublishedRevision: entry.PublishedRevision, ReviewComment: entry.ReviewComment, ReviewedBy: entry.ReviewedBy, Version: entry.Version, CreatedAt: timestamppb.New(entry.CreatedAt), UpdatedAt: timestamppb.New(entry.UpdatedAt), CreatedBy: entry.CreatedBy, UpdatedBy: entry.UpdatedBy}, ChangeType: changeType}
+	payload := &configv1.ConfigChangedEvent{Entry: &configv1.ConfigEntry{Id: entry.ID, Environment: entry.Environment, TenantId: entry.TenantID, ApplicationId: entry.ApplicationID, Service: entry.Service, Key: entry.Key, SecretRef: entry.SecretRef, Status: entry.Status, Revision: entry.Revision, RolloutPercentage: entry.RolloutPercentage, PublishedRevision: entry.PublishedRevision, ReviewComment: entry.ReviewComment, ReviewedBy: entry.ReviewedBy, Version: entry.Version, CreatedAt: timestamppb.New(entry.CreatedAt), UpdatedAt: timestamppb.New(entry.UpdatedAt), CreatedBy: entry.CreatedBy, UpdatedBy: entry.UpdatedBy}, ChangeType: changeType}
 	if entry.ReviewedAt != nil {
 		payload.Entry.ReviewedAt = timestamppb.New(*entry.ReviewedAt)
 	}
 	if entry.SecretRef == "" {
 		payload.Entry.Value = append([]byte(nil), entry.Value...)
 	}
-	envelope, err := eventbus.NewEnvelope(eventbus.Metadata{EventID: uuid.NewString(), EventType: "platform.config.v1.ConfigChanged", AggregateID: entry.ID, AggregateType: "config_entry", TenantID: entry.TenantID, SchemaVersion: 1, ActorID: actor, OccurredAt: entry.UpdatedAt}, payload)
+	envelope, err := eventbus.NewEnvelope(eventbus.Metadata{EventID: uuid.NewString(), EventType: "platform.config.v1.ConfigChanged", AggregateID: entry.ID, AggregateType: "config_entry", TenantID: entry.TenantID, ApplicationID: entry.ApplicationID, SchemaVersion: 1, ActorID: actor, OccurredAt: entry.UpdatedAt}, payload)
 	if err != nil {
 		return fmt.Errorf("build config changed event: %w", err)
 	}
@@ -224,7 +250,7 @@ func (s *Service) addChangedEvent(ctx context.Context, tx *sqlx.Tx, entry Entry,
 	}
 	return s.repository.AddOutbox(ctx, tx, OutboxEvent{ID: envelope.GetEventId(), Subject: "platform.config.entry.changed.v1", Envelope: encoded, AvailableAt: entry.UpdatedAt, CreatedAt: entry.UpdatedAt, UpdatedAt: entry.UpdatedAt, CreatedBy: actor, UpdatedBy: actor})
 }
-func (s *Service) Resolve(ctx context.Context, environment, tenantID, service, subject string, keys []string) ([]Entry, string, error) {
+func (s *Service) Resolve(ctx context.Context, environment, tenantID, applicationID, service, subject string, keys []string) ([]Entry, string, error) {
 	caller, ok := platformprincipal.FromContext(ctx)
 	if !ok {
 		return nil, "", apperror.Unauthorized("authenticated actor is required")
@@ -232,7 +258,10 @@ func (s *Service) Resolve(ctx context.Context, environment, tenantID, service, s
 	if err := enforceTenant(caller, tenantID); err != nil {
 		return nil, "", err
 	}
-	values, err := s.repository.Resolve(ctx, environment, tenantID, service, keys)
+	if err := s.verifyApplication(ctx, tenantID, applicationID); err != nil {
+		return nil, "", err
+	}
+	values, err := s.repository.Resolve(ctx, environment, tenantID, applicationID, service, keys)
 	if err != nil {
 		return nil, "", translate(err)
 	}
@@ -255,12 +284,15 @@ func (s *Service) Resolve(ctx context.Context, environment, tenantID, service, s
 	}
 	return result, fmt.Sprintf("%x", hash.Sum(nil)), nil
 }
-func (s *Service) List(ctx context.Context, environment, tenantID, service string, page, pageSize int) (Page, error) {
+func (s *Service) List(ctx context.Context, environment, tenantID, applicationID, service string, page, pageSize int) (Page, error) {
 	caller, ok := platformprincipal.FromContext(ctx)
 	if !ok {
 		return Page{}, apperror.Unauthorized("authenticated actor is required")
 	}
 	if err := enforceTenant(caller, tenantID); err != nil {
+		return Page{}, err
+	}
+	if err := s.verifyApplication(ctx, tenantID, applicationID); err != nil {
 		return Page{}, err
 	}
 	if page <= 0 {
@@ -272,12 +304,29 @@ func (s *Service) List(ctx context.Context, environment, tenantID, service strin
 	if pageSize > 100 {
 		return Page{}, apperror.Invalid("page_size must not exceed 100", nil)
 	}
-	values, total, err := s.repository.List(ctx, environment, tenantID, service, pageSize, (page-1)*pageSize)
+	values, total, err := s.repository.List(ctx, environment, tenantID, applicationID, service, pageSize, (page-1)*pageSize)
 	return Page{Entries: values, Total: total, Page: page, PageSize: pageSize}, translate(err)
 }
 func enforceTenant(caller platformprincipal.Principal, requestedTenantID string) error {
 	if caller.Type == platformprincipal.TypeUser && (strings.TrimSpace(caller.TenantID) == "" || caller.TenantID != strings.TrimSpace(requestedTenantID)) {
 		return apperror.Forbidden("tenant access denied")
+	}
+	return nil
+}
+
+func (s *Service) verifyApplication(ctx context.Context, tenantID, applicationID string) error {
+	tenantID, applicationID = strings.TrimSpace(tenantID), strings.TrimSpace(applicationID)
+	if applicationID == "" {
+		return nil
+	}
+	if tenantID == "" {
+		return apperror.Invalid("application_id requires tenant_id", nil)
+	}
+	if err := s.applications.Verify(ctx, tenantID, applicationID); err != nil {
+		if errors.Is(err, appaccess.ErrNotGranted) {
+			return apperror.Forbidden("application access denied")
+		}
+		return apperror.Unavailable("application access verification unavailable", err)
 	}
 	return nil
 }
@@ -313,4 +362,4 @@ func translate(err error) error {
 	return apperror.Internal(err)
 }
 
-var Module = fx.Module("dynamic-config", fx.Provide(NewRepository, NewService))
+var Module = fx.Module("dynamic-config", fx.Provide(NewRepository, NewRuntimeService))

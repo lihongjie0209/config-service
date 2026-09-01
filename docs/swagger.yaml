@@ -31,6 +31,8 @@ definitions:
     type: object
   httptransport.ConfigEntryResponseBody:
     properties:
+      application_id:
+        type: string
       created_at:
         type: string
       created_by:
@@ -94,6 +96,8 @@ definitions:
     type: object
   httptransport.ListConfigRequest:
     properties:
+      application_id:
+        type: string
       environment:
         type: string
       page:
@@ -115,6 +119,8 @@ definitions:
     type: object
   httptransport.PutConfigRequest:
     properties:
+      application_id:
+        type: string
       environment:
         type: string
       expected_version:
@@ -140,6 +146,8 @@ definitions:
     type: object
   httptransport.ResolveConfigRequest:
     properties:
+      application_id:
+        type: string
       environment:
         type: string
       keys:

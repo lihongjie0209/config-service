@@ -1,0 +1,1 @@
+ALTER TABLE config_entries DROP INDEX config_entries_resolve_idx, ADD INDEX config_entries_resolve_idx(environment,service,tenant_id,status,config_key), DROP INDEX config_entries_scope_uq, ADD UNIQUE KEY config_entries_scope_uq(environment,tenant_id,service,config_key), DROP CHECK chk_config_entries_scope, DROP COLUMN application_id;
