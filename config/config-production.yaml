@@ -32,6 +32,8 @@ rate_limit:
   enabled: true
 idempotency:
   enabled: true
+  http_paths: [/api/v1/config/entries/put-draft, /api/v1/config/entries/submit, /api/v1/config/entries/approve, /api/v1/config/entries/reject, /api/v1/config/entries/publish, /api/v1/config/entries/rollback]
+  grpc_methods: [/platform.config.v1.ConfigService/PutDraft, /platform.config.v1.ConfigService/SubmitForApproval, /platform.config.v1.ConfigService/Approve, /platform.config.v1.ConfigService/Reject, /platform.config.v1.ConfigService/Publish, /platform.config.v1.ConfigService/Rollback]
 observability:
   metrics_enabled: true
   tracing_enabled: false

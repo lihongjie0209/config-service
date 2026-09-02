@@ -20,6 +20,25 @@ func TestConfig_AuthorizationRequiresConfiguredUpstream(t *testing.T) {
 	}
 }
 
+func TestLoad_IdempotencyRouteEnvironmentOverrides(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "config.yaml")
+	if err := os.WriteFile(path, []byte("idempotency:\n  http_paths: [/api/v1/old]\n  grpc_methods: [/old.Service/Create]\n"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	t.Setenv("APP_IDEMPOTENCY_HTTP_PATHS", "[/api/v1/config/entries/put-draft, /api/v1/config/entries/publish]")
+	t.Setenv("APP_IDEMPOTENCY_GRPC_METHODS", "[/platform.config.v1.ConfigService/Publish]")
+	cfg, err := Load(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got := strings.Join(cfg.Idempotency.HTTPPaths, ","); got != "/api/v1/config/entries/put-draft,/api/v1/config/entries/publish" {
+		t.Fatalf("HTTPPaths=%q", got)
+	}
+	if got := strings.Join(cfg.Idempotency.GRPCMethods, ","); got != "/platform.config.v1.ConfigService/Publish" {
+		t.Fatalf("GRPCMethods=%q", got)
+	}
+}
+
 func TestConfig_ProductionRequiresAuthorization(t *testing.T) {
 	cfg, err := Load("../../config/config.yaml")
 	if err != nil {
