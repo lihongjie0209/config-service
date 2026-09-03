@@ -349,6 +349,7 @@ func Authorization(enabled bool, authorizer platformauthz.Authorizer, logger *sl
 
 func configHTTPRequirement(route string) (platformauthz.Requirement, bool) {
 	requirements := map[string]platformauthz.Requirement{
+		"/api/v1/config/entries/get":       {Resource: "config.entry", Action: "read", Scope: platformauthz.ScopePrincipal},
 		"/api/v1/config/entries/put-draft": {Resource: "config.entry", Action: "update", Scope: platformauthz.ScopePrincipal},
 		"/api/v1/config/entries/submit":    {Resource: "config.entry", Action: "submit", Scope: platformauthz.ScopePrincipal},
 		"/api/v1/config/entries/approve":   {Resource: "config.entry", Action: "approve", Scope: platformauthz.ScopePrincipal},

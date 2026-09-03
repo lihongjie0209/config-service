@@ -77,6 +77,7 @@ func configGRPCRequirement(enabled bool) platformauthz.GRPCResolver {
 			return platformauthz.Requirement{}, false
 		}
 		requirements := map[string]platformauthz.Requirement{
+			configv1.ConfigService_Get_FullMethodName:               {Resource: "config.entry", Action: "read", Scope: platformauthz.ScopePrincipal},
 			configv1.ConfigService_PutDraft_FullMethodName:          {Resource: "config.entry", Action: "update", Scope: platformauthz.ScopePrincipal},
 			configv1.ConfigService_SubmitForApproval_FullMethodName: {Resource: "config.entry", Action: "submit", Scope: platformauthz.ScopePrincipal},
 			configv1.ConfigService_Approve_FullMethodName:           {Resource: "config.entry", Action: "approve", Scope: platformauthz.ScopePrincipal},
@@ -94,6 +95,14 @@ func configGRPCRequirement(enabled bool) platformauthz.GRPCResolver {
 type configServer struct {
 	configv1.UnimplementedConfigServiceServer
 	service *configdomain.Service
+}
+
+func (s *configServer) Get(ctx context.Context, request *configv1.GetRequest) (*configv1.GetResponse, error) {
+	value, err := s.service.Get(ctx, request.GetId())
+	if err != nil {
+		return nil, grpcError(err)
+	}
+	return &configv1.GetResponse{Entry: toProtoConfig(value)}, nil
 }
 
 func (s *configServer) PutDraft(ctx context.Context, request *configv1.PutDraftRequest) (*configv1.PutDraftResponse, error) {

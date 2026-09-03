@@ -219,6 +219,26 @@ func TestListRejectsTenantOutsideJWTContext(t *testing.T) {
 	}
 }
 
+func TestGetEnforcesPersistedTenantAndApplicationScope(t *testing.T) {
+	t.Parallel()
+	entry := Entry{ID: "config-1", TenantID: "tenant-1", ApplicationID: "app-1"}
+	allowed := NewService(&fakeRepository{entry: entry}, &database.Transactor{})
+	value, err := allowed.Get(userContext(t, "admin-1", "tenant-1"), " config-1 ")
+	if err != nil || value.ID != entry.ID {
+		t.Fatalf("Get() = %+v, %v", value, err)
+	}
+	if _, err := allowed.Get(userContext(t, "admin-1", "tenant-2"), "config-1"); err == nil {
+		t.Fatal("Get() allowed a different tenant")
+	}
+	denied, err := NewRuntimeService(&fakeRepository{entry: entry}, &database.Transactor{}, rejectingApplicationVerifier{err: appaccess.ErrNotGranted})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := denied.Get(userContext(t, "admin-1", "tenant-1"), "config-1"); err == nil {
+		t.Fatal("Get() allowed an ungranted application")
+	}
+}
+
 func TestRolloutHitIsStable(t *testing.T) {
 	first := rolloutHit("user-1", "feature.checkout", 3, 50)
 	for range 10 {

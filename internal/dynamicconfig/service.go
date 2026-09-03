@@ -43,6 +43,24 @@ func NewRuntimeService(repository Repository, transactor *database.Transactor, a
 	return &Service{repository: repository, transactor: transactor, applications: applications, now: time.Now}, nil
 }
 
+func (s *Service) Get(ctx context.Context, id string) (Entry, error) {
+	value, err := s.repository.Get(ctx, strings.TrimSpace(id))
+	if err != nil {
+		return Entry{}, translate(err)
+	}
+	caller, ok := platformprincipal.FromContext(ctx)
+	if !ok {
+		return Entry{}, apperror.Unauthorized("authenticated actor is required")
+	}
+	if err := enforceTenant(caller, value.TenantID); err != nil {
+		return Entry{}, err
+	}
+	if err := s.verifyApplication(ctx, value.TenantID, value.ApplicationID); err != nil {
+		return Entry{}, err
+	}
+	return value, nil
+}
+
 func (s *Service) PutDraft(ctx context.Context, value Entry, expectedVersion int64) (Entry, error) {
 	value.Environment = strings.ToLower(strings.TrimSpace(value.Environment))
 	value.TenantID = strings.TrimSpace(value.TenantID)

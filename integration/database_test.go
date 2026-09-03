@@ -76,6 +76,10 @@ func TestRepositoryAndMigrations(t *testing.T) {
 			if err != nil {
 				t.Fatalf("publish: %v", err)
 			}
+			loaded, err := service.Get(actorCtx, created.ID)
+			if err != nil || loaded.Version != published.Version || loaded.ApplicationID != "app-1" {
+				t.Fatalf("get=%+v published=%+v err=%v", loaded, published, err)
+			}
 			resolved, etag, err := service.Resolve(actorCtx, "test", "tenant-1", "app-1", "web", "user-1", []string{"feature.checkout"})
 			if err != nil || len(resolved) != 1 || etag == "" || published.Status != "published" {
 				t.Fatalf("resolve=%+v etag=%q published=%+v err=%v", resolved, etag, published, err)

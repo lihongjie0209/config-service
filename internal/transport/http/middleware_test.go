@@ -72,7 +72,7 @@ func TestIdempotencyExecutionCompletesAndReplaysConfigPublish(t *testing.T) {
 }
 func TestIdempotencyExecutionBypassesConfigReads(t *testing.T) {
 	t.Parallel()
-	for _, route := range []string{"/api/v1/config/resolve", "/api/v1/config/entries/list"} {
+	for _, route := range []string{"/api/v1/config/resolve", "/api/v1/config/entries/get", "/api/v1/config/entries/list"} {
 		t.Run(route, func(t *testing.T) {
 			manager := &fakeIdempotencyManager{decision: idempotency.Decision{State: idempotency.StateConflict}}
 			calls := 0
@@ -100,6 +100,7 @@ func (a authorizationStub) Authorize(context.Context, platformprincipal.Principa
 func TestConfigHTTPRequirementCoversEveryBusinessRoute(t *testing.T) {
 	t.Parallel()
 	routes := []string{
+		"/api/v1/config/entries/get",
 		"/api/v1/config/entries/put-draft", "/api/v1/config/entries/submit",
 		"/api/v1/config/entries/approve", "/api/v1/config/entries/reject",
 		"/api/v1/config/entries/publish", "/api/v1/config/entries/rollback",

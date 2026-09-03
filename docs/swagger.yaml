@@ -94,6 +94,13 @@ definitions:
       total:
         type: integer
     type: object
+  httptransport.GetConfigRequest:
+    properties:
+      id:
+        type: string
+    required:
+    - id
+    type: object
   httptransport.ListConfigRequest:
     properties:
       application_id:
@@ -239,6 +246,54 @@ paths:
       security:
       - Bearer: []
       summary: Approve a submitted configuration revision
+      tags:
+      - configuration
+  /api/v1/config/entries/get:
+    post:
+      consumes:
+      - application/json
+      parameters:
+      - description: Configuration identity
+        in: body
+        name: request
+        required: true
+        schema:
+          $ref: '#/definitions/httptransport.GetConfigRequest'
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            allOf:
+            - $ref: '#/definitions/httptransport.Response'
+            - properties:
+                body:
+                  $ref: '#/definitions/httptransport.ConfigEntryResponseBody'
+              type: object
+        "400":
+          description: Bad Request
+          schema:
+            $ref: '#/definitions/httptransport.Response'
+        "401":
+          description: Unauthorized
+          schema:
+            $ref: '#/definitions/httptransport.Response'
+        "403":
+          description: Forbidden
+          schema:
+            $ref: '#/definitions/httptransport.Response'
+        "404":
+          description: Not Found
+          schema:
+            $ref: '#/definitions/httptransport.Response'
+        "500":
+          description: Internal Server Error
+          schema:
+            $ref: '#/definitions/httptransport.Response'
+      security:
+      - Bearer: []
+      summary: Get a configuration entry
       tags:
       - configuration
   /api/v1/config/entries/list:

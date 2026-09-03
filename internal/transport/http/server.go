@@ -64,6 +64,7 @@ func NewServer(lc fx.Lifecycle, cfg config.Config, handler *Handler, authService
 	api.POST("/version", handler.Version)
 	api.POST("/me", handler.Me)
 	api.POST("/config/entries/put-draft", handler.PutConfig)
+	api.POST("/config/entries/get", handler.GetConfig)
 	api.POST("/config/entries/submit", handler.SubmitConfig)
 	api.POST("/config/entries/approve", handler.ApproveConfig)
 	api.POST("/config/entries/reject", handler.RejectConfig)

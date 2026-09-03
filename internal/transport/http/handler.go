@@ -39,6 +39,9 @@ type ConfigIDRequest struct {
 	ID              string `json:"id" binding:"required"`
 	ExpectedVersion int64  `json:"expected_version" binding:"required"`
 }
+type GetConfigRequest struct {
+	ID string `json:"id" binding:"required"`
+}
 type ReviewConfigRequest struct {
 	ID              string `json:"id" binding:"required"`
 	ExpectedVersion int64  `json:"expected_version" binding:"required"`
@@ -175,6 +178,30 @@ func (h *Handler) PutConfig(c *gin.Context) {
 		return
 	}
 	value, err := h.configs.PutDraft(c.Request.Context(), configdomain.Entry{ID: request.ID, Environment: request.Environment, TenantID: request.TenantID, ApplicationID: request.ApplicationID, Service: request.Service, Key: request.Key, Value: request.Value, SecretRef: request.SecretRef, RolloutPercentage: request.RolloutPercentage}, request.ExpectedVersion)
+	if err != nil {
+		Fail(c, h.logger, err)
+		return
+	}
+	OK(c, configEntryResponse(value))
+}
+
+// GetConfig godoc
+// @Summary Get a configuration entry
+// @Tags configuration
+// @Security Bearer
+// @Accept json
+// @Produce json
+// @Param request body GetConfigRequest true "Configuration identity"
+// @Success 200 {object} Response{body=ConfigEntryResponseBody}
+// @Failure 400,401,403,404,500 {object} Response
+// @Router /api/v1/config/entries/get [post]
+func (h *Handler) GetConfig(c *gin.Context) {
+	var request GetConfigRequest
+	if err := c.ShouldBindJSON(&request); err != nil {
+		Fail(c, h.logger, apperror.Invalid("invalid json request", err))
+		return
+	}
+	value, err := h.configs.Get(c.Request.Context(), request.ID)
 	if err != nil {
 		Fail(c, h.logger, err)
 		return

@@ -19,6 +19,7 @@ func TestConfigGRPCRequirementCoversEveryBusinessMethod(t *testing.T) {
 	t.Parallel()
 	resolve := configGRPCRequirement(true)
 	methods := []string{
+		configv1.ConfigService_Get_FullMethodName,
 		configv1.ConfigService_PutDraft_FullMethodName,
 		configv1.ConfigService_SubmitForApproval_FullMethodName,
 		configv1.ConfigService_Approve_FullMethodName,
